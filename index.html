@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Keuangan Perusahaan</title>
+<meta name="theme-color" content="#2a78d6">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Keuangan">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --bg:#f7f6f2; --card:#ffffff; --border:#e3e1d9; --border-strong:#c9c7bd;
+    --text:#1a1a18; --text2:#5f5e58; --muted:#8b8a83;
+    --accent:#2a78d6; --accent-bg:#e6f1fb;
+    --green:#0f8a4a; --green-bg:#e7f6ec;
+    --red:#c8372f; --red-bg:#fceceb;
+    --amber:#b8720b; --amber-bg:#fbf1de;
+    --purple:#4a3aa7; --purple-bg:#eeecfb;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased;
+  }
+  .app{max-width:1100px; margin:0 auto; padding:24px 20px 60px;}
+  h1{font-size:22px; font-weight:600; margin:0 0 4px;}
+  .subtitle{color:var(--text2); font-size:14px; margin:0 0 24px;}
+  .tabs{display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:24px; overflow-x:auto;}
+  .tab{
+    padding:10px 16px; background:transparent; border:none; border-bottom:2px solid transparent;
+    font-size:14px; color:var(--text2); cursor:pointer; white-space:nowrap; font-family:inherit;
+  }
+  .tab.active{color:var(--accent); border-bottom-color:var(--accent); font-weight:600;}
+  .view{display:none;}
+  .view.active{display:block;}
+  .grid{display:grid; gap:16px;}
+  .grid-4{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));}
+  .grid-2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr));}
+  .grid-3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px;}
+  .metric-label{font-size:12px; color:var(--text2); margin:0 0 6px;}
+  .metric-value{font-size:22px; font-weight:600; margin:0;}
+  .card h3{font-size:14px; font-weight:600; margin:0 0 14px;}
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th{text-align:left; padding:8px 10px; color:var(--text2); font-weight:600; border-bottom:1px solid var(--border); font-size:12px;}
+  td{padding:8px 10px; border-bottom:1px solid var(--border);}
+  tr:last-child td{border-bottom:none;}
+  .right{text-align:right;}
+  .pill{display:inline-block; padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600;}
+  .pill-green{background:var(--green-bg); color:var(--green);}
+  .pill-amber{background:var(--amber-bg); color:var(--amber);}
+  .pill-red{background:var(--red-bg); color:var(--red);}
+  .form-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:8px;}
+  input, select{
+    padding:8px 10px; border:1px solid var(--border-strong); border-radius:8px; font-size:13px;
+    font-family:inherit; background:#fff; color:var(--text); width:100%;
+  }
+  button.primary{
+    padding:9px 16px; background:var(--text); color:#fff; border:none; border-radius:8px;
+    font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;
+  }
+  button.primary:hover{background:#333;}
+  button.primary:disabled{opacity:0.5; cursor:not-allowed;}
+  button.ghost{
+    padding:8px 14px; background:transparent; border:1px solid var(--border-strong); border-radius:8px;
+    font-size:13px; cursor:pointer; color:var(--text2); font-family:inherit;
+  }
+  button.ghost:hover{background:var(--bg);}
+  .del-btn{color:var(--red); cursor:pointer; font-size:12px; border:none; background:none; font-family:inherit;}
+  .chart-wrap{position:relative; height:260px;}
+  .income{color:var(--green); font-weight:600;}
+  .expense{color:var(--red); font-weight:600;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:30px 0;}
+  .helper{font-size:12px; color:var(--muted); margin-top:6px;}
+  .flex-between{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;}
+  .save-indicator{font-size:12px; color:var(--muted); transition:opacity .3s;}
+  .role-badge{display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:20px; font-size:12px; font-weight:600;}
+  .role-owner{background:var(--purple-bg); color:var(--purple);}
+  .role-accounting{background:var(--accent-bg); color:var(--accent);}
+  .switch-role{font-size:12px; color:var(--accent); background:none; border:none; cursor:pointer; text-decoration:underline; font-family:inherit; padding:0;}
+  .export-row{display:flex; gap:8px; flex-wrap:wrap;}
+  .subtabs{display:flex; gap:6px; margin-bottom:16px;}
+  .subtab{
+    padding:7px 14px; background:var(--card); border:1px solid var(--border-strong); border-radius:20px;
+    font-size:13px; color:var(--text2); cursor:pointer; font-family:inherit;
+  }
+  .subtab.active{background:var(--text); color:#fff; border-color:var(--text); font-weight:600;}
+  .subview{display:none;}
+  .subview.active{display:block;}
+  .sync-dot{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:5px;}
+  .sync-dot.offline{background:var(--red);}
+
+  #loginOverlay{
+    position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center;
+    z-index:100; padding:20px;
+  }
+  .login-card{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:36px 32px; max-width:360px; width:100%;}
+  .login-card h2{font-size:18px; margin:0 0 6px; text-align:center;}
+  .login-card p.desc{font-size:13px; color:var(--text2); margin:0 0 22px; text-align:center;}
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:12px; font-weight:600; color:var(--text2); margin-bottom:5px;}
+  .login-error{background:var(--red-bg); color:var(--red); font-size:12px; padding:8px 12px; border-radius:8px; margin-bottom:14px; display:none;}
+  .login-btn{width:100%; padding:10px; margin-top:6px;}
+  #configError{
+    position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center;
+    z-index:200; padding:24px; text-align:center;
+  }
+</style>
+</head>
+<body>
+
+<!-- Shown if SUPABASE_URL/KEY belum diisi -->
+<div id="configError">
+  <div class="login-card">
+    <h2>Konfigurasi belum lengkap</h2>
+    <p class="desc">Buka file <code>index.html</code>, cari bagian <code>SUPABASE_URL</code> dan <code>SUPABASE_ANON_KEY</code> di dekat awal tag <code>&lt;script&gt;</code> paling bawah, lalu isi dengan nilai dari project Supabase Anda.</p>
+  </div>
+</div>
+
+<div id="loginOverlay">
+  <div class="login-card">
+    <h2>Masuk ke aplikasi</h2>
+    <p class="desc">Keuangan Perusahaan</p>
+    <div class="login-error" id="loginError"></div>
+    <div class="field">
+      <label for="loginUsername">Username</label>
+      <input type="text" id="loginUsername" placeholder="Masukkan username" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="loginPassword">Password</label>
+      <input type="password" id="loginPassword" placeholder="Masukkan password" autocomplete="current-password">
+    </div>
+    <button class="primary login-btn" id="loginBtn">Masuk</button>
+    <p class="helper" style="text-align:center; margin-top:16px;">Akun baru (Accounting) hanya bisa dibuat oleh Owner setelah login.</p>
+  </div>
+</div>
+
+<div class="app" id="mainApp" style="display:none;">
+  <div class="flex-between">
+    <div>
+      <h1>Keuangan Perusahaan</h1>
+      <p class="subtitle"><span class="sync-dot" id="syncDot"></span><span id="syncLabel">Tersambung ke database</span></p>
+    </div>
+    <div style="text-align:right;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
+        <span class="role-badge" id="roleBadge"></span>
+        <span class="helper" id="userLabel" style="margin:0;"></span>
+        <button class="switch-role" id="logoutBtn">Keluar</button>
+      </div>
+      <span class="save-indicator" id="saveIndicator"></span>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabsRow">
+    <button class="tab active" data-view="dashboard">Dashboard</button>
+    <button class="tab" data-view="transaksi">Transaksi</button>
+    <button class="tab" data-view="laporan">Laporan</button>
+    <button class="tab" data-view="piutang">Piutang & Utang</button>
+    <button class="tab" data-view="anggaran">Anggaran</button>
+    <button class="tab owner-only" data-view="proyeksi">Proyeksi Kas</button>
+    <button class="tab owner-only" data-view="perbandingan">Perbandingan</button>
+    <button class="tab owner-only" data-view="pengguna">Pengguna</button>
+    <button class="tab owner-only" data-view="log">Log Aktivitas</button>
+  </div>
+
+  <div class="view active" id="view-dashboard">
+    <div class="grid grid-4" id="dashMetrics"></div>
+    <div class="grid grid-2" id="dashPaymentBreakdown" style="margin-top:16px;"></div>
+    <div class="grid grid-2" style="margin-top:16px;">
+      <div class="card">
+        <h3>Pendapatan vs pengeluaran (6 bulan terakhir)</h3>
+        <div class="chart-wrap"><canvas id="chartIncomeExpense" role="img" aria-label="Grafik batang pendapatan dan pengeluaran per bulan"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Tren laba bersih</h3>
+        <div class="chart-wrap"><canvas id="chartProfit" role="img" aria-label="Grafik garis tren laba bersih per bulan"></canvas></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <h3>Rasio keuangan</h3>
+      <div class="grid grid-3" id="dashRatios"></div>
+    </div>
+  </div>
+
+  <div class="view" id="view-transaksi">
+    <div class="subtabs" id="transaksiSubtabs">
+      <button class="subtab active" data-subview="baru">Transaksi baru</button>
+      <button class="subtab" data-subview="tabungan">Tabungan</button>
+    </div>
+
+    <div class="subview active" id="subview-baru">
+      <div class="card">
+        <h3>Tambah transaksi baru</h3>
+        <div class="form-grid">
+          <input type="date" id="tDate">
+          <input type="text" id="tDesc" placeholder="Deskripsi">
+          <select id="tType">
+            <option value="income">Pendapatan</option>
+            <option value="expense">Pengeluaran</option>
+          </select>
+          <input type="text" id="tCategory" placeholder="Kategori">
+          <input type="number" id="tAmount" placeholder="Jumlah (Rp)">
+        </div>
+        <div class="form-grid" id="tPaymentRow">
+          <select id="tPaymentMethod">
+            <option value="cash">Cash</option>
+            <option value="transfer">Transfer</option>
+            <option value="tabungan" id="tPaymentTabunganOpt">Tabungan</option>
+            <option value="service" id="tPaymentServiceOpt">Service/PSB (untuk bonus karyawan)</option>
+          </select>
+          <select id="tBank" style="display:none;">
+            <option value="BNI">Transfer BNI</option>
+            <option value="BCA">Transfer BCA</option>
+            <option value="BPD">Transfer BPD</option>
+            <option value="Lainnya">Bank lainnya...</option>
+          </select>
+          <input type="text" id="tBankCustom" placeholder="Nama bank" style="display:none;">
+          <select id="tSavingType" style="display:none;">
+            <option value="Gaji">Ambil dari tabungan gaji</option>
+            <option value="Profit">Ambil dari tabungan profit</option>
+            <option value="Operational">Ambil dari tabungan operational</option>
+            <option value="Bandwidth">Ambil dari tabungan bandwidth</option>
+            <option value="Service/PSB">Ambil dari dana Service/PSB</option>
+            <option value="Lainnya">Jenis lainnya...</option>
+          </select>
+          <input type="text" id="tSavingTypeCustom" placeholder="Nama jenis tabungan" style="display:none;">
+          <div id="tProofWrap" style="display:none;">
+            <label class="helper" style="display:block; margin-bottom:4px;">Bukti transfer (gambar/PDF, maks 5MB)</label>
+            <input type="file" id="tProofFile" accept="image/*,.pdf">
+          </div>
+        </div>
+        <p class="helper" id="tTabunganHelper" style="display:none;">Pengeluaran dari tabungan otomatis mengurangi saldo tabungan jenis terkait. Khusus tabungan Gaji/Profit dan Service/PSB tidak dihitung sebagai pengeluaran/pemasukan kas (karena tidak pernah masuk kas).</p>
+        <p class="helper" id="tServiceHelper" style="display:none;">Pemasukan ini <strong>tidak masuk ke kas perusahaan</strong> — otomatis masuk ke Tabungan Service/PSB untuk nantinya dibagikan sebagai service/bonus karyawan.</p>
+        <p class="helper" id="tProofStatus"></p>
+        <button class="primary" id="addTransBtn" style="margin-top:8px;">Tambah</button>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <div class="flex-between">
+          <h3 style="margin:0;">Daftar transaksi</h3>
+          <span class="helper" id="transCount"></span>
+        </div>
+        <div style="overflow-x:auto; margin-top:10px;">
+          <table>
+            <thead><tr><th>Tanggal</th><th>Deskripsi</th><th>Kategori</th><th class="right">Jumlah</th><th>Metode</th><th>Dicatat oleh</th><th></th></tr></thead>
+            <tbody id="transTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="subview" id="subview-tabungan">
+      <div class="card">
+        <h3>Distribusi otomatis dari kas cash</h3>
+        <p class="helper" style="margin-top:0;">Dihitung dari Pemasukan cash dikurangi Pengeluaran cash, lalu dibagi otomatis: Bandwidth 45%, Operational 20%, Gaji 15%, Profit 20%.</p>
+        <div class="grid grid-4" id="distribusiSummary"></div>
+        <div class="form-grid" style="margin-top:12px;">
+          <input type="number" id="distribusiAmount" placeholder="Jumlah untuk didistribusikan (Rp)">
+          <button class="primary" id="distribusiBtn">Distribusikan sekarang</button>
+        </div>
+        <p class="helper" id="distribusiPreview"></p>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>Tambah setoran tabungan manual</h3>
+        <p class="helper" style="margin-top:0;">Tabungan mengurangi saldo kas perusahaan. Khusus jenis <strong>Gaji</strong> dan <strong>Profit</strong> juga dihitung sebagai pengeluaran (mengurangi laba bersih); jenis Operational dan Bandwidth hanya memindahkan kas menjadi tabungan, tanpa mengurangi laba.</p>
+        <div class="form-grid">
+          <input type="date" id="svDate">
+          <select id="svType">
+            <option value="Gaji">Tabungan gaji</option>
+            <option value="Profit">Tabungan profit</option>
+            <option value="Operational">Tabungan operational</option>
+            <option value="Bandwidth">Tabungan bandwidth</option>
+            <option value="Service/PSB">Service/PSB (bonus karyawan)</option>
+            <option value="Lainnya">Lainnya...</option>
+          </select>
+          <input type="text" id="svTypeCustom" placeholder="Nama jenis tabungan" style="display:none;">
+          <input type="number" id="svAmount" placeholder="Jumlah (Rp)">
+          <input type="text" id="svNotes" placeholder="Catatan (opsional)">
+          <button class="primary" id="addSavingsBtn">Tambah setoran</button>
+        </div>
+      </div>
+
+      <div class="grid grid-4" id="savingsBreakdown" style="margin-top:16px;"></div>
+
+      <div class="card" style="margin-top:16px;">
+        <div class="flex-between">
+          <h3 style="margin:0;">Riwayat setoran tabungan</h3>
+          <span class="helper" id="savingsTotalLabel"></span>
+        </div>
+        <div style="overflow-x:auto; margin-top:10px;">
+          <table>
+            <thead><tr><th>Tanggal</th><th>Jenis</th><th class="right">Jumlah</th><th>Catatan</th><th></th></tr></thead>
+            <tbody id="savingsTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-laporan">
+    <div class="card">
+      <h3>Export laporan</h3>
+      <div class="export-row" style="margin-top:10px;">
+        <button class="ghost" id="exportExcelBtn">Export ke Excel (.xlsx)</button>
+        <button class="ghost" id="exportPdfBtn">Export ke PDF (hard copy)</button>
+      </div>
+      <p class="helper">Excel berisi seluruh data mentah. PDF berisi ringkasan laporan siap cetak.</p>
+    </div>
+    <div class="grid grid-2" style="margin-top:16px;">
+      <div class="card">
+        <h3>Laporan laba rugi</h3>
+        <table id="plTable"></table>
+      </div>
+      <div class="card">
+        <h3>Neraca sederhana</h3>
+        <table id="balanceTable"></table>
+        <p class="helper">Aset lainnya diasumsikan tetap sebagai contoh; sesuaikan dengan data riil perusahaan Anda.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-piutang">
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Piutang usaha</h3>
+        <div class="form-grid" style="margin-top:10px;">
+          <input type="text" id="arName" placeholder="Nama pelanggan">
+          <input type="number" id="arAmount" placeholder="Jumlah (Rp)">
+          <select id="arStatus">
+            <option value="lancar">Lancar</option>
+            <option value="jatuh_tempo">Jatuh tempo</option>
+            <option value="terlambat">Terlambat</option>
+          </select>
+          <button class="primary" id="addARBtn">Tambah</button>
+        </div>
+        <table id="arTable" style="margin-top:10px;"></table>
+        <div class="flex-between" style="margin-top:10px; font-weight:600;">
+          <span>Total piutang</span><span id="arTotal"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Utang usaha</h3>
+        <div class="form-grid" style="margin-top:10px;">
+          <input type="text" id="apName" placeholder="Nama supplier">
+          <input type="number" id="apAmount" placeholder="Jumlah (Rp)">
+          <select id="apStatus">
+            <option value="lancar">Lancar</option>
+            <option value="jatuh_tempo">Jatuh tempo</option>
+            <option value="terlambat">Terlambat</option>
+          </select>
+          <button class="primary" id="addAPBtn">Tambah</button>
+        </div>
+        <table id="apTable" style="margin-top:10px;"></table>
+        <div class="flex-between" style="margin-top:10px; font-weight:600;">
+          <span>Total utang</span><span id="apTotal"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-anggaran">
+    <div class="subtabs" id="anggaranSubtabs">
+      <button class="subtab active" data-subview="perusahaan">Anggaran perusahaan</button>
+      <button class="subtab" data-subview="payroll">Gaji & bonus karyawan</button>
+    </div>
+
+    <div class="subview active" id="subview-perusahaan">
+      <div class="card">
+        <h3>Rencanakan anggaran bulanan per kategori</h3>
+        <div class="form-grid">
+          <input type="text" id="bCategory" placeholder="Kategori (mis. Sewa, Utilitas)">
+          <input type="number" id="bAmount" placeholder="Anggaran (Rp)">
+          <button class="primary" id="addBudgetBtn">Tambah anggaran</button>
+        </div>
+        <p class="helper">Gunakan kategori operasional selain gaji karyawan — untuk gaji & bonus per karyawan, lihat sub-tab "Gaji & bonus karyawan".</p>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <h3>Realisasi vs anggaran (bulan berjalan)</h3>
+        <table>
+          <thead><tr><th>Kategori</th><th class="right">Anggaran</th><th class="right">Realisasi</th><th class="right">Sisa</th><th></th></tr></thead>
+          <tbody id="budgetTable"></tbody>
+        </table>
+        <p class="empty" id="budgetEmpty" style="display:none;">Belum ada anggaran. Tambahkan kategori di atas.</p>
+      </div>
+    </div>
+
+    <div class="subview" id="subview-payroll">
+      <div class="card">
+        <h3>Tambah gaji & bonus karyawan</h3>
+        <div class="form-grid">
+          <input type="text" id="pName" placeholder="Nama karyawan">
+          <input type="month" id="pMonth">
+          <input type="number" id="pSalary" placeholder="Gaji pokok (Rp)">
+          <input type="number" id="pBonus" placeholder="Bonus (Rp, boleh 0)">
+          <input type="text" id="pNotes" placeholder="Catatan (opsional)">
+          <button class="primary" id="addPayrollBtn">Tambah</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <div class="flex-between">
+          <h3 style="margin:0;">Daftar gaji & bonus</h3>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <label class="helper" style="margin:0;">Filter bulan</label>
+            <input type="month" id="payrollFilterMonth" style="width:150px;">
+            <button class="ghost" id="clearPayrollFilterBtn">Semua bulan</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto; margin-top:10px;">
+          <table>
+            <thead><tr><th>Bulan</th><th>Karyawan</th><th class="right">Gaji pokok</th><th class="right">Bonus</th><th class="right">Total</th><th>Catatan</th><th></th></tr></thead>
+            <tbody id="payrollTable"></tbody>
+          </table>
+        </div>
+        <div class="flex-between" style="margin-top:10px; font-weight:600;">
+          <span id="payrollTotalLabel">Total (bulan ditampilkan)</span><span id="payrollTotal"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-proyeksi">
+    <div class="card">
+      <div class="flex-between">
+        <h3 style="margin:0;">Proyeksi arus kas</h3>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <label class="helper" style="margin:0;">Bulan ke depan</label>
+          <input type="range" id="projMonths" min="3" max="12" value="6" style="width:120px;">
+          <span id="projMonthsVal" style="font-size:13px; font-weight:600;">6</span>
+        </div>
+      </div>
+      <p class="helper">Proyeksi dihitung dari rata-rata pendapatan dan pengeluaran bulanan historis Anda.</p>
+      <div class="chart-wrap" style="height:300px; margin-top:10px;"><canvas id="chartProjection" role="img" aria-label="Grafik proyeksi saldo kas ke depan"></canvas></div>
+    </div>
+  </div>
+
+  <div class="view owner-only" id="view-perbandingan">
+    <div class="card">
+      <h3>Perbandingan bulan ke bulan</h3>
+      <div class="chart-wrap"><canvas id="chartCompare" role="img" aria-label="Grafik perbandingan pendapatan pengeluaran dan laba antar bulan"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <h3>Detail perbandingan</h3>
+      <table>
+        <thead><tr><th>Bulan</th><th class="right">Pendapatan</th><th class="right">Pengeluaran</th><th class="right">Laba</th><th class="right">Perubahan laba</th></tr></thead>
+        <tbody id="compareTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="view owner-only" id="view-pengguna">
+    <div class="card">
+      <h3>Buat akun baru</h3>
+      <div class="form-grid">
+        <input type="text" id="newUsername" placeholder="Username">
+        <input type="password" id="newPassword" placeholder="Password (min. 6 karakter)">
+        <select id="newRole">
+          <option value="accounting">Accounting</option>
+          <option value="owner">Owner</option>
+        </select>
+        <button class="primary" id="addUserBtn">Buat akun</button>
+      </div>
+      <p class="helper" id="userFormError" style="display:none; color:var(--red);"></p>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <h3>Daftar akun</h3>
+      <table>
+        <thead><tr><th>Username</th><th>Peran</th><th></th></tr></thead>
+        <tbody id="usersTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="view owner-only" id="view-log">
+    <div class="card">
+      <div class="flex-between">
+        <h3 style="margin:0;">Log aktivitas</h3>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <select id="logFilterTable" style="width:170px;">
+            <option value="">Semua data</option>
+            <option value="transactions">Transaksi</option>
+            <option value="savings">Tabungan</option>
+            <option value="payroll">Gaji & bonus</option>
+            <option value="budgets">Anggaran</option>
+            <option value="receivables">Piutang</option>
+            <option value="payables">Utang</option>
+            <option value="app_users">Pengguna</option>
+            <option value="auth">Login</option>
+          </select>
+          <button class="ghost" id="refreshLogBtn">Muat ulang</button>
+        </div>
+      </div>
+      <p class="helper" style="margin-top:0;">Menampilkan 200 aktivitas terbaru. Hanya Owner yang bisa membuka log ini — dibatasi di level database, bukan cuma disembunyikan di tampilan.</p>
+      <div style="overflow-x:auto; margin-top:10px;">
+        <table>
+          <thead><tr><th>Waktu</th><th>Pengguna</th><th>Aksi</th><th>Data</th><th>Keterangan</th></tr></thead>
+          <tbody id="logTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// KONFIGURASI SUPABASE — isi dengan nilai dari project Anda
+// (Supabase Dashboard > Project Settings > API)
+// ============================================================
+const SUPABASE_URL = 'https://ffjxsswjmatztqqruicl.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmanhzc3dqbWF0enRxcXJ1aWNsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTI1OTIsImV4cCI6MjEwMjEyODU5Mn0.eLbQ8v-bQaO6zSBQ27FqKjDtc3-e-fx-If7-aBuL9UI';
+// ============================================================
+
+let sb = null;
+if(SUPABASE_URL.startsWith('http') && SUPABASE_ANON_KEY.length > 10){
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} else {
+  document.getElementById('configError').style.display = 'flex';
+}
+
+const SESSION_KEY = 'finance_app_session_v1';
+let currentRole = null;
+let currentUsername = null;
+let dataLoaded = false;
+let data = { transactions: [], receivables: [], payables: [], budgets: [], payroll: [], savings: [] };
+
+// ---------- Login ----------
+document.getElementById('loginBtn').addEventListener('click', handleLogin);
+document.getElementById('loginPassword').addEventListener('keydown', e=>{ if(e.key==='Enter') handleLogin(); });
+
+async function handleLogin(){
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+  if(!username || !password){
+    errEl.textContent = 'Mohon isi username dan password.'; errEl.style.display = 'block'; return;
+  }
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = 'Memeriksa...';
+  try{
+    const { data: rows, error } = await sb.rpc('login', { p_username: username, p_password: password });
+    if(error) throw error;
+    if(!rows || rows.length === 0){
+      errEl.textContent = 'Username atau password salah.'; errEl.style.display = 'block';
+      return;
+    }
+    currentRole = rows[0].role;
+    currentUsername = rows[0].username;
+    localStorage.setItem(SESSION_KEY, JSON.stringify({username: currentUsername, role: currentRole}));
+    await enterApp();
+    logActivity('login', 'auth', `${currentUsername} (${currentRole}) login`);
+  }catch(e){
+    errEl.textContent = 'Gagal terhubung ke database: ' + (e.message || e); errEl.style.display = 'block';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Masuk';
+  }
+}
+
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  localStorage.removeItem(SESSION_KEY);
+  currentRole = null; currentUsername = null;
+  document.getElementById('mainApp').style.display = 'none';
+  document.getElementById('loginOverlay').style.display = 'flex';
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
+  unsubscribeRealtime();
+});
+
+const OWNER_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','proyeksi','perbandingan','pengguna','log'];
+const ACCOUNTING_TABS = ['transaksi','piutang','anggaran'];
+
+function applyRoleUI(){
+  const badge = document.getElementById('roleBadge');
+  if(currentRole === 'owner'){ badge.textContent = 'Owner'; badge.className = 'role-badge role-owner'; }
+  else { badge.textContent = 'Accounting'; badge.className = 'role-badge role-accounting'; }
+  document.getElementById('userLabel').textContent = currentUsername;
+
+  const allowedTabs = currentRole === 'owner' ? OWNER_TABS : ACCOUNTING_TABS;
+  document.querySelectorAll('.tab').forEach(tab=>{ tab.style.display = allowedTabs.includes(tab.dataset.view) ? '' : 'none'; });
+  document.querySelectorAll('.view').forEach(v=>{
+    const view = v.id.replace('view-','');
+    if(!allowedTabs.includes(view)) v.classList.remove('active');
+  });
+  const activeTab = document.querySelector('.tab.active');
+  if(!activeTab || activeTab.style.display === 'none'){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    const firstAllowed = document.querySelector('.tab[data-view="'+allowedTabs[0]+'"]');
+    firstAllowed.classList.add('active');
+    document.getElementById('view-'+allowedTabs[0]).classList.add('active');
+  }
+}
+
+async function enterApp(){
+  document.getElementById('loginOverlay').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+  applyRoleUI();
+  document.getElementById('tDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('svDate').value = new Date().toISOString().slice(0,10);
+  await loadAllData();
+  dataLoaded = true;
+  renderAll();
+  subscribeRealtime();
+}
+
+async function tryRestoreSession(){
+  const raw = localStorage.getItem(SESSION_KEY);
+  if(!raw) return false;
+  try{
+    const sess = JSON.parse(raw);
+    currentRole = sess.role; currentUsername = sess.username;
+    await enterApp();
+    return true;
+  }catch(e){ return false; }
+}
+
+// ---------- Load & sync data from Supabase ----------
+function setSyncStatus(ok){
+  document.getElementById('syncDot').className = 'sync-dot' + (ok ? '' : ' offline');
+  document.getElementById('syncLabel').textContent = ok ? 'Tersambung ke database' : 'Gagal tersambung — periksa koneksi';
+}
+
+async function loadAllData(){
+  try{
+    const [t, r, p, b, pr, sv] = await Promise.all([
+      sb.from('transactions').select('*').order('date', {ascending:false}),
+      sb.from('receivables').select('*').order('id'),
+      sb.from('payables').select('*').order('id'),
+      sb.from('budgets').select('*').order('id'),
+      sb.from('payroll').select('*').order('month', {ascending:false}),
+      sb.from('savings').select('*').order('date', {ascending:false})
+    ]);
+    if(t.error) throw t.error;
+    data.transactions = t.data.map(x => ({...x, amount: Number(x.amount)}));
+    data.receivables = r.data.map(x => ({...x, amount: Number(x.amount)}));
+    data.payables = p.data.map(x => ({...x, amount: Number(x.amount)}));
+    data.budgets = b.data.map(x => ({...x, amount: Number(x.amount)}));
+    data.payroll = (pr.data||[]).map(x => ({...x, base_salary: Number(x.base_salary), bonus: Number(x.bonus)}));
+    data.savings = (sv.data||[]).map(x => ({...x, amount: Number(x.amount)}));
+    setSyncStatus(true);
+  }catch(e){
+    console.error('Gagal memuat data:', e);
+    setSyncStatus(false);
+  }
+}
+
+function flashSaved(){
+  const el = document.getElementById('saveIndicator');
+  el.textContent = 'Tersimpan';
+  el.style.opacity = '1';
+  setTimeout(()=>{ el.style.opacity = '0'; }, 1200);
+}
+
+let realtimeChannel = null;
+function subscribeRealtime(){
+  if(realtimeChannel) return;
+  realtimeChannel = sb.channel('finance-app-changes')
+    .on('postgres_changes', {event:'*', schema:'public', table:'transactions'}, async ()=>{ await loadAllData(); renderAll(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'receivables'}, async ()=>{ await loadAllData(); renderAll(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'payables'}, async ()=>{ await loadAllData(); renderAll(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'budgets'}, async ()=>{ await loadAllData(); renderAll(); })
+    .subscribe();
+}
+function unsubscribeRealtime(){
+  if(realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
+}
+
+// ---------- Utils ----------
+function formatCurrency(num){
+  return new Intl.NumberFormat('id-ID', {style:'currency', currency:'IDR', minimumFractionDigits:0}).format(Math.round(num));
+}
+function monthKey(dateStr){ return dateStr.slice(0,7); }
+function monthLabel(key){
+  const [y,m] = key.split('-');
+  const names = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  return names[parseInt(m,10)-1] + ' ' + y;
+}
+function escapeHtml(str){ const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+function monthlyAggregates(){
+  const map = {};
+  data.transactions.forEach(t=>{
+    const k = monthKey(t.date);
+    if(!map[k]) map[k] = {income:0, expense:0};
+    if(t.amount >= 0) map[k].income += t.amount; else map[k].expense += Math.abs(t.amount);
+  });
+  const keys = Object.keys(map).sort();
+  return keys.map(k => ({month:k, label:monthLabel(k), income:map[k].income, expense:map[k].expense, profit: map[k].income - map[k].expense}));
+}
+
+const SAVINGS_AS_EXPENSE_TYPES = ['gaji','profit'];
+const PASSTHROUGH_SAVINGS_TYPES = ['service/psb']; // tidak pernah menyentuh kas/laba, di kedua arah
+const SAVINGS_TYPE_ORDER = ['Bandwidth','Operational','Gaji','Profit'];
+const AUTO_DISTRIBUTION_PERCENT = { Bandwidth: 0.45, Operational: 0.20, Gaji: 0.15, Profit: 0.20 };
+
+function isPassthroughSavingsType(jenis){
+  return PASSTHROUGH_SAVINGS_TYPES.includes((jenis||'').toLowerCase());
+}
+
+function financialTotals(){
+  // Pemasukan Service/PSB dikecualikan total dari pendapatan (tidak masuk kas/laba)
+  const totalIncome = data.transactions.filter(t=>t.amount>=0 && t.payment_method !== 'service').reduce((s,t)=>s+t.amount,0);
+  const serviceIncome = data.transactions.filter(t=>t.amount>=0 && t.payment_method === 'service').reduce((s,t)=>s+t.amount,0);
+
+  const expenseTxsAll = data.transactions.filter(t=>t.amount<0);
+  // Pengeluaran yang didanai tabungan Service/PSB juga dikecualikan total (pass-through di kedua arah)
+  const expenseTxs = expenseTxsAll.filter(t => !(t.payment_method === 'tabungan' && isPassthroughSavingsType(t.saving_type)));
+  const totalExpenseTx = Math.abs(expenseTxs.reduce((s,t)=>s+t.amount,0));
+
+  // Pool kas berdasarkan metode pembayaran
+  const cashIncome = data.transactions.filter(t=>t.amount>=0 && t.payment_method==='cash').reduce((s,t)=>s+t.amount,0);
+  const cashExpense = Math.abs(data.transactions.filter(t=>t.amount<0 && t.payment_method==='cash').reduce((s,t)=>s+t.amount,0));
+  const transferIncome = data.transactions.filter(t=>t.amount>=0 && t.payment_method==='transfer').reduce((s,t)=>s+t.amount,0);
+  const transferExpense = Math.abs(data.transactions.filter(t=>t.amount<0 && t.payment_method==='transfer').reduce((s,t)=>s+t.amount,0));
+  const netCash = cashIncome - cashExpense;
+  const netTransfer = transferIncome - transferExpense;
+
+  // Tabungan perusahaan (pool utama) TIDAK termasuk dana Service/PSB — itu pool terpisah untuk karyawan
+  const totalSavings = data.savings.filter(x => !isPassthroughSavingsType(x.jenis)).reduce((s,x)=>s+x.amount,0);
+  const totalServiceFund = data.savings.filter(x => isPassthroughSavingsType(x.jenis)).reduce((s,x)=>s+x.amount,0);
+
+  // Setoran (bukan penarikan) tabungan gaji/profit dihitung sebagai pengeluaran saat disetor
+  const totalSavingsAsExpense = data.savings
+    .filter(x => x.amount > 0 && SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase()))
+    .reduce((s,x)=>s+x.amount,0);
+
+  // Pengeluaran yang didanai tabungan gaji/profit -> tidak dihitung lagi (sudah dihitung saat disetor)
+  const tabunganExpenseGajiProfit = expenseTxs
+    .filter(t => t.payment_method === 'tabungan' && SAVINGS_AS_EXPENSE_TYPES.includes((t.saving_type||'').toLowerCase()))
+    .reduce((s,t)=>s + Math.abs(t.amount), 0);
+
+  // Pengeluaran yang didanai tabungan operational/bandwidth -> tetap dihitung sebagai pengeluaran (baru dihitung sekarang, karena belum dihitung saat disetor)
+  const tabunganExpenseOther = expenseTxs
+    .filter(t => t.payment_method === 'tabungan' && !SAVINGS_AS_EXPENSE_TYPES.includes((t.saving_type||'').toLowerCase()))
+    .reduce((s,t)=>s + Math.abs(t.amount), 0);
+
+  const totalExpenseTxNonTabungan = totalExpenseTx - tabunganExpenseGajiProfit - tabunganExpenseOther;
+  const totalExpense = totalExpenseTx - tabunganExpenseGajiProfit + totalSavingsAsExpense; // dipakai untuk Laba Bersih
+  const netProfit = totalIncome - totalExpense;
+  const cashBalance = totalIncome - totalExpenseTx - totalSavings; // semua tabungan (setoran & tarikan) mengurangi/menambah kas
+
+  return {
+    totalIncome, totalExpenseTx, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther,
+    totalSavings, totalServiceFund, serviceIncome, totalSavingsAsExpense, totalExpense, netProfit, cashBalance,
+    cashIncome, cashExpense, netCash, transferIncome, transferExpense, netTransfer
+  };
+}
+
+function autoDistributedTotal(){
+  return data.savings.filter(x => x.source === 'auto_distribution').reduce((s,x)=>s+x.amount,0);
+}
+
+let chartIE, chartProfit, chartProj, chartCompare;
+
+function renderDashboard(){
+  const { totalIncome, totalExpense, totalSavings, totalServiceFund, netProfit, cashBalance, cashIncome, cashExpense, netCash, transferIncome, transferExpense, netTransfer } = financialTotals();
+
+  document.getElementById('dashMetrics').innerHTML = `
+    <div class="card"><p class="metric-label">Total pendapatan</p><p class="metric-value">${formatCurrency(totalIncome)}</p></div>
+    <div class="card"><p class="metric-label">Total pengeluaran</p><p class="metric-value">${formatCurrency(totalExpense)}</p></div>
+    <div class="card"><p class="metric-label">Laba bersih</p><p class="metric-value" style="color:${netProfit>=0?'var(--green)':'var(--red)'}">${formatCurrency(netProfit)}</p></div>
+    <div class="card"><p class="metric-label">Saldo kas</p><p class="metric-value">${formatCurrency(cashBalance)}</p></div>
+    <div class="card"><p class="metric-label">Tabungan perusahaan</p><p class="metric-value" style="color:var(--purple)">${formatCurrency(totalSavings)}</p></div>
+    <div class="card"><p class="metric-label">Dana Service/PSB (bonus karyawan)</p><p class="metric-value" style="color:var(--amber)">${formatCurrency(totalServiceFund)}</p><p class="metric-sub">Tidak termasuk pendapatan/kas perusahaan</p></div>
+  `;
+
+  document.getElementById('dashPaymentBreakdown').innerHTML = `
+    <div class="card">
+      <p class="metric-label">Kas cash (masuk − keluar)</p>
+      <p class="metric-value">${formatCurrency(netCash)}</p>
+      <p class="metric-sub">Masuk ${formatCurrency(cashIncome)} · Keluar ${formatCurrency(cashExpense)}</p>
+    </div>
+    <div class="card">
+      <p class="metric-label">Kas transfer (masuk − keluar)</p>
+      <p class="metric-value">${formatCurrency(netTransfer)}</p>
+      <p class="metric-sub">Masuk ${formatCurrency(transferIncome)} · Keluar ${formatCurrency(transferExpense)}</p>
+    </div>
+  `;
+
+  const margin = totalIncome ? (netProfit/totalIncome*100) : 0;
+  const liquidity = totalExpense ? (netProfit/totalExpense) : 0;
+  document.getElementById('dashRatios').innerHTML = `
+    <div><p class="metric-label">Margin keuntungan</p><p class="metric-value">${margin.toFixed(1)}%</p></div>
+    <div><p class="metric-label">Rasio likuiditas (laba/beban)</p><p class="metric-value">${liquidity.toFixed(2)}</p></div>
+    <div><p class="metric-label">Jumlah transaksi</p><p class="metric-value">${data.transactions.length}</p></div>
+  `;
+  const agg = monthlyAggregates().slice(-6);
+  const labels = agg.map(a=>a.label);
+  if(chartIE) chartIE.destroy();
+  chartIE = new Chart(document.getElementById('chartIncomeExpense'), {
+    type:'bar', data:{labels, datasets:[
+      {label:'Pendapatan', data:agg.map(a=>a.income), backgroundColor:'#1baf7a', borderRadius:4},
+      {label:'Pengeluaran', data:agg.map(a=>a.expense), backgroundColor:'#eb6834', borderRadius:4}
+    ]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>'Rp '+(v/1000000).toFixed(1)+'jt'}}}}
+  });
+  renderCustomLegend('chartIncomeExpense', [['Pendapatan','#1baf7a'],['Pengeluaran','#eb6834']]);
+  if(chartProfit) chartProfit.destroy();
+  chartProfit = new Chart(document.getElementById('chartProfit'), {
+    type:'line', data:{labels, datasets:[{label:'Laba bersih', data:agg.map(a=>a.profit), borderColor:'#2a78d6', backgroundColor:'rgba(42,120,214,0.1)', fill:true, tension:0.3, borderWidth:2}]},
+    options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>'Rp '+(v/1000000).toFixed(1)+'jt'}}}}
+  });
+}
+
+function renderCustomLegend(canvasId, items){
+  const canvas = document.getElementById(canvasId);
+  const existing = canvas.parentElement.querySelector('.custom-legend');
+  if(existing) existing.remove();
+  const legend = document.createElement('div');
+  legend.className = 'custom-legend';
+  legend.style.cssText = 'display:flex;gap:14px;font-size:12px;color:var(--text2);margin-bottom:8px;';
+  legend.innerHTML = items.map(([label,color])=>`<span style="display:flex;align-items:center;gap:4px;"><span style="width:9px;height:9px;border-radius:2px;background:${color};display:inline-block;"></span>${label}</span>`).join('');
+  canvas.parentElement.insertBefore(legend, canvas);
+}
+
+function renderTransactions(){
+  const tbody = document.getElementById('transTable');
+  const sorted = [...data.transactions].sort((a,b)=> b.date.localeCompare(a.date));
+  document.getElementById('transCount').textContent = sorted.length + ' transaksi';
+  if(sorted.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="empty">Belum ada transaksi</td></tr>'; return; }
+  tbody.innerHTML = sorted.map(t => {
+    let metode = '-';
+    if(t.payment_method === 'cash') metode = '<span class="pill pill-green">Cash</span>';
+    else if(t.payment_method === 'transfer') metode = `<span class="pill pill-purple">Transfer ${escapeHtml(t.bank||'')}</span>`;
+    else if(t.payment_method === 'tabungan') metode = `<span class="pill pill-amber">Tabungan ${escapeHtml(t.saving_type||'')}</span>`;
+    else if(t.payment_method === 'service') metode = '<span class="pill pill-purple">Service/PSB</span>';
+    if(t.proof_path){ metode += ` <button class="del-btn" style="color:var(--accent);" data-action="viewProof" data-path="${escapeHtml(t.proof_path)}">Lihat bukti</button>`; }
+    else if(t.proof_url){ metode += ` <a href="${t.proof_url}" target="_blank" rel="noopener" style="font-size:12px;">Lihat bukti (lama)</a>`; }
+    return `
+    <tr>
+      <td>${t.date}</td><td>${escapeHtml(t.description)}</td><td>${escapeHtml(t.category||'-')}</td>
+      <td class="right ${t.amount>=0?'income':'expense'}">${formatCurrency(t.amount)}</td>
+      <td>${metode}</td>
+      <td>${escapeHtml(t.created_by||'-')}</td>
+      <td class="right"><button class="del-btn" data-id="${t.id}" data-action="delTrans">Hapus</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderLaporan(){
+  const { totalIncome, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther, totalSavings, totalServiceFund, serviceIncome, totalSavingsAsExpense, netProfit, cashBalance } = financialTotals();
+  const gajiSavingsDeposit = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
+  const profitSavingsDeposit = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
+
+  document.getElementById('plTable').innerHTML = `
+    <tr><td>Pendapatan penjualan</td><td class="right" style="font-weight:600;">${formatCurrency(totalIncome)}</td></tr>
+    <tr><td>Biaya operasional (cash/transfer)</td><td class="right" style="font-weight:600;">(${formatCurrency(totalExpenseTxNonTabungan)})</td></tr>
+    <tr><td style="color:var(--text2);">Pengeluaran dari tabungan operational/bandwidth</td><td class="right" style="color:var(--text2);">(${formatCurrency(tabunganExpenseOther)})</td></tr>
+    <tr><td style="color:var(--text2);">Tabungan gaji (sebagai pengeluaran saat disetor)</td><td class="right" style="color:var(--text2);">(${formatCurrency(gajiSavingsDeposit)})</td></tr>
+    <tr><td style="color:var(--text2);">Tabungan profit (sebagai pengeluaran saat disetor)</td><td class="right" style="color:var(--text2);">(${formatCurrency(profitSavingsDeposit)})</td></tr>
+    <tr style="background:var(--green-bg);"><td style="font-weight:600;color:var(--green);padding-top:10px;">Laba bersih</td><td class="right" style="font-weight:600;color:var(--green);padding-top:10px;">${formatCurrency(netProfit)}</td></tr>
+    <tr><td style="color:var(--muted); font-size:12px; padding-top:8px;">Pemasukan Service/PSB (di luar laporan ini, lihat Tabungan)</td><td class="right" style="color:var(--muted); font-size:12px; padding-top:8px;">${formatCurrency(serviceIncome)}</td></tr>
+  `;
+
+  const otherAssets = 5000000;
+  const grandTotal = cashBalance + totalSavings + totalServiceFund + otherAssets;
+  document.getElementById('balanceTable').innerHTML = `
+    <tr><td style="font-weight:600;">Aset</td><td class="right" style="font-weight:600;">${formatCurrency(grandTotal)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2);">Kas & bank</td><td class="right" style="color:var(--text2);">${formatCurrency(cashBalance)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2);">Tabungan perusahaan</td><td class="right" style="color:var(--text2);">${formatCurrency(totalSavings)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2);">Dana Service/PSB (titipan karyawan)</td><td class="right" style="color:var(--text2);">${formatCurrency(totalServiceFund)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2);">Aset lainnya</td><td class="right" style="color:var(--text2);">${formatCurrency(otherAssets)}</td></tr>
+    <tr style="border-top:2px solid var(--border);"><td style="font-weight:600;padding-top:10px;">Liabilitas + ekuitas</td><td class="right" style="font-weight:600;padding-top:10px;">${formatCurrency(grandTotal)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2); font-size:12px;">- termasuk kewajiban Service/PSB ke karyawan</td><td class="right" style="color:var(--text2); font-size:12px;">${formatCurrency(totalServiceFund)}</td></tr>
+  `;
+}
+
+function statusPill(status){
+  const map = {lancar:['pill-green','Lancar'], jatuh_tempo:['pill-amber','Jatuh tempo'], terlambat:['pill-red','Terlambat']};
+  const [cls,label] = map[status] || map.lancar;
+  return `<span class="pill ${cls}">${label}</span>`;
+}
+
+function renderReceivablesPayables(){
+  const arTbody = document.getElementById('arTable');
+  arTbody.innerHTML = data.receivables.length ? data.receivables.map(r => `
+    <tr><td>${escapeHtml(r.name)}</td><td class="right">${formatCurrency(r.amount)}</td><td class="right">${statusPill(r.status)}</td>
+    <td class="right"><button class="del-btn" data-id="${r.id}" data-action="delAR">Hapus</button></td></tr>`).join('') : '<tr><td colspan="4" class="empty">Belum ada piutang</td></tr>';
+  document.getElementById('arTotal').textContent = formatCurrency(data.receivables.reduce((s,r)=>s+r.amount,0));
+
+  const apTbody = document.getElementById('apTable');
+  apTbody.innerHTML = data.payables.length ? data.payables.map(p => `
+    <tr><td>${escapeHtml(p.name)}</td><td class="right">${formatCurrency(p.amount)}</td><td class="right">${statusPill(p.status)}</td>
+    <td class="right"><button class="del-btn" data-id="${p.id}" data-action="delAP">Hapus</button></td></tr>`).join('') : '<tr><td colspan="4" class="empty">Belum ada utang</td></tr>';
+  document.getElementById('apTotal').textContent = formatCurrency(data.payables.reduce((s,p)=>s+p.amount,0));
+}
+
+function renderBudgets(){
+  const tbody = document.getElementById('budgetTable');
+  const emptyMsg = document.getElementById('budgetEmpty');
+  if(data.budgets.length === 0){ tbody.innerHTML = ''; emptyMsg.style.display = 'block'; return; }
+  emptyMsg.style.display = 'none';
+  const currentMonth = new Date().toISOString().slice(0,7);
+  const realizationByCategory = {};
+  data.transactions.filter(t=>t.amount<0 && monthKey(t.date)===currentMonth).forEach(t=>{
+    const cat = t.category || 'Lainnya';
+    realizationByCategory[cat] = (realizationByCategory[cat]||0) + Math.abs(t.amount);
+  });
+  tbody.innerHTML = data.budgets.map(b => {
+    const realized = realizationByCategory[b.category] || 0;
+    const remaining = b.amount - realized;
+    const over = remaining < 0;
+    return `<tr>
+      <td>${escapeHtml(b.category)}</td><td class="right">${formatCurrency(b.amount)}</td><td class="right">${formatCurrency(realized)}</td>
+      <td class="right" style="color:${over?'var(--red)':'var(--green)'};font-weight:600;">${formatCurrency(remaining)}</td>
+      <td class="right"><button class="del-btn" data-id="${b.id}" data-action="delBudget">Hapus</button></td></tr>`;
+  }).join('');
+}
+
+function payrollMonthLabel(ym){
+  // ym is 'YYYY-MM'
+  return monthLabel(ym);
+}
+
+function renderPayroll(){
+  const filter = document.getElementById('payrollFilterMonth').value; // '' or 'YYYY-MM'
+  const rows = filter ? data.payroll.filter(p => p.month === filter) : data.payroll;
+  const sorted = [...rows].sort((a,b)=> b.month.localeCompare(a.month) || a.employee_name.localeCompare(b.employee_name));
+  const tbody = document.getElementById('payrollTable');
+  if(sorted.length === 0){
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">Belum ada data gaji/bonus</td></tr>';
+  } else {
+    tbody.innerHTML = sorted.map(p => {
+      const total = p.base_salary + p.bonus;
+      return `<tr>
+        <td>${payrollMonthLabel(p.month)}</td>
+        <td>${escapeHtml(p.employee_name)}</td>
+        <td class="right">${formatCurrency(p.base_salary)}</td>
+        <td class="right">${formatCurrency(p.bonus)}</td>
+        <td class="right" style="font-weight:600;">${formatCurrency(total)}</td>
+        <td>${escapeHtml(p.notes||'-')}</td>
+        <td class="right"><button class="del-btn" data-id="${p.id}" data-action="delPayroll">Hapus</button></td>
+      </tr>`;
+    }).join('');
+  }
+  const total = sorted.reduce((s,p)=> s + p.base_salary + p.bonus, 0);
+  document.getElementById('payrollTotal').textContent = formatCurrency(total);
+  document.getElementById('payrollTotalLabel').textContent = filter ? `Total (${payrollMonthLabel(filter)})` : 'Total (semua bulan ditampilkan)';
+}
+
+function renderProjection(){
+  const months = parseInt(document.getElementById('projMonths').value, 10);
+  document.getElementById('projMonthsVal').textContent = months;
+  const agg = monthlyAggregates();
+  const recent = agg.slice(-6);
+  const avgIncome = recent.length ? recent.reduce((s,a)=>s+a.income,0)/recent.length : 0;
+  const avgExpense = recent.length ? recent.reduce((s,a)=>s+a.expense,0)/recent.length : 0;
+  let cashBalance = agg.reduce((s,a)=>s+a.profit,0);
+  const labels = ['Saat ini']; const balances = [cashBalance];
+  const today = new Date();
+  for(let i=1;i<=months;i++){
+    cashBalance += (avgIncome - avgExpense);
+    const d = new Date(today.getFullYear(), today.getMonth()+i, 1);
+    labels.push(monthLabel(d.toISOString().slice(0,7))); balances.push(cashBalance);
+  }
+  if(chartProj) chartProj.destroy();
+  chartProj = new Chart(document.getElementById('chartProjection'), {
+    type:'line', data:{labels, datasets:[{label:'Proyeksi saldo kas', data:balances, borderColor:'#4a3aa7', backgroundColor:'rgba(74,58,167,0.08)', fill:true, tension:0.3, borderWidth:2, pointRadius:3}]},
+    options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>'Rp '+(v/1000000).toFixed(1)+'jt'}}}}
+  });
+}
+
+function renderComparison(){
+  if(currentRole !== 'owner') return;
+  const agg = monthlyAggregates();
+  const labels = agg.map(a=>a.label);
+  if(chartCompare) chartCompare.destroy();
+  chartCompare = new Chart(document.getElementById('chartCompare'), {
+    type:'bar', data:{labels, datasets:[
+      {label:'Pendapatan', data:agg.map(a=>a.income), backgroundColor:'#2a78d6', borderRadius:4},
+      {label:'Pengeluaran', data:agg.map(a=>a.expense), backgroundColor:'#eb6834', borderRadius:4},
+      {label:'Laba', data:agg.map(a=>a.profit), backgroundColor:'#1baf7a', borderRadius:4}
+    ]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>'Rp '+(v/1000000).toFixed(1)+'jt'}}}}
+  });
+  renderCustomLegend('chartCompare', [['Pendapatan','#2a78d6'],['Pengeluaran','#eb6834'],['Laba','#1baf7a']]);
+  const tbody = document.getElementById('compareTable');
+  tbody.innerHTML = agg.map((a,i)=>{
+    const prevProfit = i>0 ? agg[i-1].profit : null;
+    const change = prevProfit !== null ? a.profit - prevProfit : null;
+    const changeStr = change === null ? '-' : (change>=0?'+':'') + formatCurrency(change);
+    const changeColor = change === null ? 'var(--muted)' : (change>=0?'var(--green)':'var(--red)');
+    return `<tr><td>${a.label}</td><td class="right income">${formatCurrency(a.income)}</td><td class="right expense">${formatCurrency(a.expense)}</td>
+      <td class="right" style="font-weight:600;">${formatCurrency(a.profit)}</td><td class="right" style="color:${changeColor};font-weight:600;">${changeStr}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="empty">Belum ada data</td></tr>';
+}
+
+async function renderUsers(){
+  if(currentRole !== 'owner') return;
+  try{
+    const { data: users, error } = await sb.rpc('list_users', { p_requester: currentUsername });
+    if(error) throw error;
+    document.getElementById('usersTable').innerHTML = users.map(u => `
+      <tr><td>${escapeHtml(u.username)}</td><td>${u.role === 'owner' ? 'Owner' : 'Accounting'}</td>
+      <td class="right">${u.username === currentUsername ? '<span class="helper">Akun aktif</span>' : `<button class="del-btn" data-username="${escapeHtml(u.username)}" data-action="delUser">Hapus</button>`}</td></tr>
+    `).join('');
+  }catch(e){ console.error(e); }
+}
+
+// ---------- Log aktivitas ----------
+async function logActivity(action, tableName, description){
+  try{
+    await sb.from('audit_log').insert({ username: currentUsername, action, table_name: tableName, description });
+  }catch(e){ console.error('Gagal mencatat log:', e); } // tidak menghentikan alur utama jika logging gagal
+}
+
+const AUDIT_TABLE_LABELS = {
+  transactions: 'Transaksi', savings: 'Tabungan', payroll: 'Gaji & bonus', budgets: 'Anggaran',
+  receivables: 'Piutang', payables: 'Utang', app_users: 'Pengguna', auth: 'Login'
+};
+const AUDIT_ACTION_LABELS = { create: 'Tambah', delete: 'Hapus', login: 'Login' };
+
+async function renderAuditLog(){
+  if(currentRole !== 'owner') return;
+  const filterTable = document.getElementById('logFilterTable').value || null;
+  try{
+    const { data: rows, error } = await sb.rpc('list_audit_log', { p_requester: currentUsername, p_limit: 200, p_table: filterTable });
+    if(error) throw error;
+    const tbody = document.getElementById('logTable');
+    if(!rows || rows.length === 0){ tbody.innerHTML = '<tr><td colspan="5" class="empty">Belum ada aktivitas tercatat</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => {
+      const waktu = new Date(r.created_at).toLocaleString('id-ID', { dateStyle:'medium', timeStyle:'short' });
+      const actionPill = r.action === 'delete' ? '<span class="pill pill-red">Hapus</span>' : (r.action === 'login' ? '<span class="pill pill-purple">Login</span>' : '<span class="pill pill-green">Tambah</span>');
+      return `<tr>
+        <td>${waktu}</td>
+        <td>${escapeHtml(r.username||'-')}</td>
+        <td>${actionPill}</td>
+        <td>${escapeHtml(AUDIT_TABLE_LABELS[r.table_name] || r.table_name)}</td>
+        <td>${escapeHtml(r.description||'-')}</td>
+      </tr>`;
+    }).join('');
+  }catch(e){
+    document.getElementById('logTable').innerHTML = `<tr><td colspan="5" class="empty">Gagal memuat log: ${escapeHtml(e.message||String(e))}</td></tr>`;
+  }
+}
+document.getElementById('logFilterTable').addEventListener('change', renderAuditLog);
+document.getElementById('refreshLogBtn').addEventListener('click', renderAuditLog);
+
+function renderSavings(){
+  const types = ['Gaji','Profit','Operational','Bandwidth'];
+  const breakdown = types.map(t => ({
+    label: t,
+    total: data.savings.filter(x => (x.jenis||'').toLowerCase() === t.toLowerCase()).reduce((s,x)=>s+x.amount,0),
+    isExpense: SAVINGS_AS_EXPENSE_TYPES.includes(t.toLowerCase())
+  }));
+  const serviceTotal = data.savings.filter(x => isPassthroughSavingsType(x.jenis)).reduce((s,x)=>s+x.amount,0);
+  const otherTotal = data.savings
+    .filter(x => !types.some(t=>t.toLowerCase() === (x.jenis||'').toLowerCase()) && !isPassthroughSavingsType(x.jenis))
+    .reduce((s,x)=>s+x.amount,0);
+
+  document.getElementById('savingsBreakdown').innerHTML = breakdown.map(b => `
+    <div class="card">
+      <p class="metric-label">Tabungan ${escapeHtml(b.label.toLowerCase())}${b.isExpense ? ' <span class="pill pill-amber" style="margin-left:4px;">jadi pengeluaran</span>' : ''}</p>
+      <p class="metric-value">${formatCurrency(b.total)}</p>
+    </div>
+  `).join('') + `
+    <div class="card">
+      <p class="metric-label">Service/PSB <span class="pill pill-purple" style="margin-left:4px;">di luar kas</span></p>
+      <p class="metric-value">${formatCurrency(serviceTotal)}</p>
+    </div>` + (otherTotal > 0 ? `
+    <div class="card">
+      <p class="metric-label">Tabungan lainnya</p>
+      <p class="metric-value">${formatCurrency(otherTotal)}</p>
+    </div>` : '');
+
+  const sorted = [...data.savings].sort((a,b)=> b.date.localeCompare(a.date));
+  const tbody = document.getElementById('savingsTable');
+  if(sorted.length === 0){
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Belum ada riwayat tabungan</td></tr>';
+  } else {
+    tbody.innerHTML = sorted.map(x => {
+      const isWithdrawal = x.amount < 0;
+      const badge = isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
+      return `
+      <tr>
+        <td>${x.date}</td>
+        <td>${escapeHtml(x.jenis)} ${badge}</td>
+        <td class="right" style="font-weight:600; color:${isWithdrawal?'var(--red)':'var(--text)'};">${formatCurrency(x.amount)}</td>
+        <td>${escapeHtml(x.notes||'-')}</td>
+        <td class="right"><button class="del-btn" data-id="${x.id}" data-action="delSavings">Hapus</button></td>
+      </tr>`;
+    }).join('');
+  }
+  const total = data.savings.reduce((s,x)=>s+x.amount,0);
+  document.getElementById('savingsTotalLabel').textContent = 'Total tabungan: ' + formatCurrency(total);
+  renderDistribusi();
+}
+
+function renderDistribusi(){
+  const { netCash } = financialTotals();
+  const alreadyDistributed = autoDistributedTotal();
+  const belumDistribusi = Math.max(0, netCash - alreadyDistributed);
+
+  document.getElementById('distribusiSummary').innerHTML = `
+    <div class="card"><p class="metric-label">Kas cash bersih</p><p class="metric-value">${formatCurrency(netCash)}</p></div>
+    <div class="card"><p class="metric-label">Sudah didistribusikan</p><p class="metric-value">${formatCurrency(alreadyDistributed)}</p></div>
+    <div class="card"><p class="metric-label">Belum didistribusikan</p><p class="metric-value" style="color:var(--purple)">${formatCurrency(belumDistribusi)}</p></div>
+  `;
+
+  const amountInput = document.getElementById('distribusiAmount');
+  if(document.activeElement !== amountInput){ amountInput.value = belumDistribusi > 0 ? Math.round(belumDistribusi) : ''; }
+  updateDistribusiPreview();
+}
+
+function updateDistribusiPreview(){
+  const amount = parseFloat(document.getElementById('distribusiAmount').value) || 0;
+  if(amount <= 0){ document.getElementById('distribusiPreview').textContent = ''; return; }
+  const parts = SAVINGS_TYPE_ORDER.map(t => `${t} ${formatCurrency(amount * AUTO_DISTRIBUTION_PERCENT[t])}`);
+  document.getElementById('distribusiPreview').textContent = 'Akan dibagi: ' + parts.join(' · ');
+}
+
+function renderAll(){
+  renderDashboard(); renderTransactions(); renderLaporan(); renderReceivablesPayables(); renderBudgets(); renderPayroll(); renderSavings(); renderProjection();
+  if(currentRole === 'owner'){ renderComparison(); renderUsers(); }
+}
+
+function exportExcel(){
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.transactions.map(t => ({ Tanggal: t.date, Deskripsi: t.description, Kategori: t.category || '', Tipe: t.amount>=0 ? 'Pendapatan' : 'Pengeluaran', 'Jumlah (Rp)': t.amount, Metode: t.payment_method === 'transfer' ? `Transfer ${t.bank||''}` : (t.payment_method === 'cash' ? 'Cash' : (t.payment_method === 'tabungan' ? `Tabungan ${t.saving_type||''}` : (t.payment_method === 'service' ? 'Service/PSB' : '-'))), 'Bukti transfer': (t.proof_path || t.proof_url) ? 'Ada (buka di aplikasi)' : '-', 'Dicatat oleh': t.created_by || '' }))), 'Transaksi');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.receivables.map(r => ({ Pelanggan:r.name, 'Jumlah (Rp)':r.amount, Status:r.status }))), 'Piutang');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.payables.map(p => ({ Supplier:p.name, 'Jumlah (Rp)':p.amount, Status:p.status }))), 'Utang');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.budgets.map(b => ({ Kategori:b.category, 'Anggaran (Rp)':b.amount }))), 'Anggaran');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.payroll.map(p => ({ Bulan:payrollMonthLabel(p.month), Karyawan:p.employee_name, 'Gaji pokok (Rp)':p.base_salary, 'Bonus (Rp)':p.bonus, 'Total (Rp)':p.base_salary+p.bonus, Catatan:p.notes||'' }))), 'Gaji & Bonus');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.savings.map(x => ({ Tanggal:x.date, Jenis:x.jenis, 'Jumlah (Rp)':x.amount, 'Dihitung sebagai pengeluaran':SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase())?'Ya':'Tidak', Catatan:x.notes||'' }))), 'Tabungan');
+  const agg = monthlyAggregates();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(agg.map(a => ({ Bulan:a.label, 'Pendapatan (Rp)':a.income, 'Pengeluaran (Rp)':a.expense, 'Laba (Rp)':a.profit }))), 'Ringkasan Bulanan');
+  XLSX.writeFile(wb, `laporan-keuangan-${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function exportPdf(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const { totalIncome, totalExpenseTx, totalSavings, totalServiceFund, netProfit, cashBalance } = financialTotals();
+  const gajiSavings = data.savings.filter(x=>(x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
+  const profitSavings = data.savings.filter(x=>(x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
+  const dateStr = new Date().toLocaleDateString('id-ID', {year:'numeric', month:'long', day:'numeric'});
+  doc.setFontSize(16); doc.text('Laporan Keuangan Perusahaan', 14, 18);
+  doc.setFontSize(10); doc.setTextColor(100); doc.text('Dicetak pada ' + dateStr, 14, 25);
+  doc.setFontSize(12); doc.setTextColor(0); doc.text('Ringkasan', 14, 36);
+  doc.autoTable({ startY: 40, head: [['Pos', 'Jumlah']], body: [['Total pendapatan', formatCurrency(totalIncome)], ['Saldo kas', formatCurrency(cashBalance)], ['Tabungan perusahaan', formatCurrency(totalSavings)], ['Dana Service/PSB (titipan karyawan)', formatCurrency(totalServiceFund)], ['Laba bersih', formatCurrency(netProfit)]], theme: 'grid', headStyles: {fillColor: [42,120,214]} });
+  let y = doc.lastAutoTable.finalY + 12;
+  doc.text('Laporan laba rugi', 14, y);
+  doc.autoTable({ startY: y+4, head: [['Keterangan', 'Jumlah']], body: [
+    ['Pendapatan penjualan', formatCurrency(totalIncome)],
+    ['Biaya operasional', '(' + formatCurrency(totalExpenseTx) + ')'],
+    ['Tabungan gaji (sebagai pengeluaran)', '(' + formatCurrency(gajiSavings) + ')'],
+    ['Tabungan profit (sebagai pengeluaran)', '(' + formatCurrency(profitSavings) + ')'],
+    ['Laba bersih', formatCurrency(netProfit)]
+  ], theme: 'grid', headStyles: {fillColor: [42,120,214]} });
+  y = doc.lastAutoTable.finalY + 12;
+  doc.text('Piutang usaha', 14, y);
+  doc.autoTable({ startY: y+4, head: [['Pelanggan', 'Jumlah', 'Status']], body: data.receivables.map(r => [r.name, formatCurrency(r.amount), r.status.replace('_',' ')]), theme: 'grid', headStyles: {fillColor: [42,120,214]} });
+  y = doc.lastAutoTable.finalY + 12;
+  doc.text('Utang usaha', 14, y);
+  doc.autoTable({ startY: y+4, head: [['Supplier', 'Jumlah', 'Status']], body: data.payables.map(p => [p.name, formatCurrency(p.amount), p.status.replace('_',' ')]), theme: 'grid', headStyles: {fillColor: [42,120,214]} });
+  y = doc.lastAutoTable.finalY + 12;
+  if(y > 220){ doc.addPage(); y = 18; }
+  doc.text('Gaji & bonus karyawan', 14, y);
+  doc.autoTable({ startY: y+4, head: [['Bulan', 'Karyawan', 'Gaji pokok', 'Bonus', 'Total']], body: [...data.payroll].sort((a,b)=>b.month.localeCompare(a.month)).map(p => [payrollMonthLabel(p.month), p.employee_name, formatCurrency(p.base_salary), formatCurrency(p.bonus), formatCurrency(p.base_salary+p.bonus)]), theme: 'grid', headStyles: {fillColor: [42,120,214]}, styles: {fontSize: 8} });
+  y = doc.lastAutoTable.finalY + 12;
+  if(y > 220){ doc.addPage(); y = 18; }
+  doc.text('Riwayat tabungan', 14, y);
+  doc.autoTable({ startY: y+4, head: [['Tanggal', 'Jenis', 'Jumlah', 'Sbg. pengeluaran?']], body: [...data.savings].sort((a,b)=>b.date.localeCompare(a.date)).map(x => [x.date, x.jenis, formatCurrency(x.amount), SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase())?'Ya':'Tidak']), theme: 'grid', headStyles: {fillColor: [42,120,214]}, styles: {fontSize: 8} });
+  doc.addPage();
+  doc.setFontSize(12); doc.text('Riwayat transaksi', 14, 18);
+  doc.autoTable({ startY: 22, head: [['Tanggal', 'Deskripsi', 'Kategori', 'Jumlah', 'Metode', 'Dicatat oleh']], body: [...data.transactions].sort((a,b)=>b.date.localeCompare(a.date)).map(t => [t.date, t.description, t.category||'-', formatCurrency(t.amount), t.payment_method==='transfer' ? `Transfer ${t.bank||''}` : (t.payment_method==='cash' ? 'Cash' : (t.payment_method==='tabungan' ? `Tabungan ${t.saving_type||''}` : (t.payment_method==='service' ? 'Service/PSB' : '-'))), t.created_by||'-']), theme: 'grid', headStyles: {fillColor: [42,120,214]}, styles: {fontSize: 8} });
+  doc.save(`laporan-keuangan-${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('view-'+tab.dataset.view).classList.add('active');
+    if(tab.dataset.view === 'perbandingan') renderComparison();
+    if(tab.dataset.view === 'pengguna') renderUsers();
+    if(tab.dataset.view === 'log') renderAuditLog();
+  });
+});
+
+// ---------- Toggle metode pembayaran (khusus Pendapatan) ----------
+function updatePaymentFieldsVisibility(){
+  const isIncome = document.getElementById('tType').value === 'income';
+  document.getElementById('tPaymentRow').style.display = '';
+  document.getElementById('tPaymentTabunganOpt').style.display = isIncome ? 'none' : '';
+  document.getElementById('tPaymentServiceOpt').style.display = isIncome ? '' : 'none';
+  const methodSelect = document.getElementById('tPaymentMethod');
+  if(isIncome && methodSelect.value === 'tabungan'){ methodSelect.value = 'cash'; }
+  if(!isIncome && methodSelect.value === 'service'){ methodSelect.value = 'cash'; }
+  updateMethodFieldsVisibility();
+}
+function updateMethodFieldsVisibility(){
+  const method = document.getElementById('tPaymentMethod').value;
+  const isTransfer = method === 'transfer';
+  const isTabungan = method === 'tabungan';
+  const isService = method === 'service';
+  document.getElementById('tBank').style.display = isTransfer ? '' : 'none';
+  document.getElementById('tBankCustom').style.display = (isTransfer && document.getElementById('tBank').value === 'Lainnya') ? '' : 'none';
+  document.getElementById('tProofWrap').style.display = isTransfer ? '' : 'none';
+  document.getElementById('tSavingType').style.display = isTabungan ? '' : 'none';
+  document.getElementById('tSavingTypeCustom').style.display = (isTabungan && document.getElementById('tSavingType').value === 'Lainnya') ? '' : 'none';
+  document.getElementById('tTabunganHelper').style.display = isTabungan ? '' : 'none';
+  document.getElementById('tServiceHelper').style.display = isService ? '' : 'none';
+}
+document.getElementById('tType').addEventListener('change', updatePaymentFieldsVisibility);
+document.getElementById('tPaymentMethod').addEventListener('change', updateMethodFieldsVisibility);
+document.getElementById('tBank').addEventListener('change', updateMethodFieldsVisibility);
+document.getElementById('tSavingType').addEventListener('change', updateMethodFieldsVisibility);
+updatePaymentFieldsVisibility();
+
+document.getElementById('distribusiAmount').addEventListener('input', updateDistribusiPreview);
+document.getElementById('distribusiBtn').addEventListener('click', async ()=>{
+  const amount = parseFloat(document.getElementById('distribusiAmount').value);
+  if(isNaN(amount) || amount <= 0){ alert('Mohon isi jumlah yang valid untuk didistribusikan.'); return; }
+  const btn = document.getElementById('distribusiBtn');
+  btn.disabled = true; btn.textContent = 'Memproses...';
+  const today = new Date().toISOString().slice(0,10);
+  try{
+    const rows = SAVINGS_TYPE_ORDER.map(t => ({
+      date: today, jenis: t, amount: Math.round(amount * AUTO_DISTRIBUTION_PERCENT[t]),
+      notes: 'Distribusi otomatis dari kas cash', source: 'auto_distribution', created_by: currentUsername
+    }));
+    const { error } = await sb.from('savings').insert(rows);
+    if(error) throw error;
+    flashSaved(); await loadAllData(); renderSavings(); renderDashboard(); renderLaporan();
+    logActivity('create', 'savings', `Distribusi otomatis ${formatCurrency(amount)} ke 4 jenis tabungan`);
+  }catch(e){
+    alert('Gagal mendistribusikan: ' + (e.message || e));
+  }finally{
+    btn.disabled = false; btn.textContent = 'Distribusikan sekarang';
+  }
+});
+
+async function uploadProofFile(file){
+  if(file.size > 5 * 1024 * 1024){ throw new Error('Ukuran file maksimal 5MB.'); }
+  const ext = file.name.split('.').pop();
+  const fileName = `${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const { data, error } = await sb.storage.from('bukti-transfer').upload(fileName, file);
+  if(error) throw error;
+  return data.path; // simpan path saja — bucket bersifat private, akses lewat signed URL sementara
+}
+
+document.getElementById('addTransBtn').addEventListener('click', async ()=>{
+  const date = document.getElementById('tDate').value;
+  const desc = document.getElementById('tDesc').value.trim();
+  const type = document.getElementById('tType').value;
+  const category = document.getElementById('tCategory').value.trim();
+  const amountRaw = parseFloat(document.getElementById('tAmount').value);
+  if(!date || !desc || isNaN(amountRaw) || amountRaw <= 0){ alert('Mohon lengkapi tanggal, deskripsi, dan jumlah yang valid.'); return; }
+  const amount = type === 'income' ? amountRaw : -amountRaw;
+
+  const paymentMethod = document.getElementById('tPaymentMethod').value;
+  let bank = null, proofPath = null, savingType = null;
+  const btn = document.getElementById('addTransBtn');
+  const statusEl = document.getElementById('tProofStatus');
+  statusEl.textContent = '';
+
+  if(paymentMethod === 'transfer'){
+    const bankSelect = document.getElementById('tBank').value;
+    bank = bankSelect === 'Lainnya' ? document.getElementById('tBankCustom').value.trim() : bankSelect;
+    if(!bank){ alert('Mohon isi nama bank.'); return; }
+    const fileInput = document.getElementById('tProofFile');
+    if(fileInput.files && fileInput.files[0]){
+      btn.disabled = true; statusEl.textContent = 'Mengunggah bukti transfer...';
+      try{
+        proofPath = await uploadProofFile(fileInput.files[0]);
+      }catch(e){
+        alert('Gagal mengunggah bukti transfer: ' + (e.message || e));
+        btn.disabled = false; statusEl.textContent = '';
+        return;
+      }
+    }
+  } else if(paymentMethod === 'tabungan' && type === 'expense'){
+    const typeSelect = document.getElementById('tSavingType').value;
+    savingType = typeSelect === 'Lainnya' ? document.getElementById('tSavingTypeCustom').value.trim() : typeSelect;
+    if(!savingType){ alert('Mohon pilih jenis tabungan.'); return; }
+    const currentBalance = data.savings.filter(x => (x.jenis||'').toLowerCase() === savingType.toLowerCase()).reduce((s,x)=>s+x.amount,0);
+    if(currentBalance < amountRaw){
+      if(!confirm(`Saldo tabungan ${savingType} saat ini hanya ${formatCurrency(currentBalance)}, kurang dari ${formatCurrency(amountRaw)}. Tetap lanjutkan?`)) return;
+    }
+  }
+
+  btn.disabled = true;
+  const { data: inserted, error } = await sb.from('transactions').insert({
+    date, description: desc, amount, category, created_by: currentUsername,
+    payment_method: paymentMethod, bank, proof_path: proofPath,
+    saving_type: paymentMethod === 'tabungan' ? savingType : null
+  }).select();
+  if(error){ btn.disabled = false; statusEl.textContent = ''; alert('Gagal menyimpan: ' + error.message); return; }
+
+  if(paymentMethod === 'tabungan' && savingType){
+    const txId = inserted && inserted[0] ? inserted[0].id : null;
+    const { error: svError } = await sb.from('savings').insert({
+      date, jenis: savingType, amount: -amountRaw,
+      notes: `Penarikan untuk pengeluaran: ${desc}`, source: 'expense_withdrawal',
+      related_transaction_id: txId, created_by: currentUsername
+    });
+    if(svError){ alert('Transaksi tersimpan, tapi gagal mencatat penarikan tabungan: ' + svError.message); }
+  } else if(paymentMethod === 'service' && type === 'income'){
+    const txId = inserted && inserted[0] ? inserted[0].id : null;
+    const { error: svError } = await sb.from('savings').insert({
+      date, jenis: 'Service/PSB', amount: amountRaw,
+      notes: `Otomatis dari pemasukan service: ${desc}`, source: 'service_income',
+      related_transaction_id: txId, created_by: currentUsername
+    });
+    if(svError){ alert('Transaksi tersimpan, tapi gagal mencatat ke tabungan Service/PSB: ' + svError.message); }
+  }
+
+  btn.disabled = false; statusEl.textContent = '';
+  document.getElementById('tDate').value = ''; document.getElementById('tDesc').value = '';
+  document.getElementById('tCategory').value = ''; document.getElementById('tAmount').value = '';
+  document.getElementById('tProofFile').value = ''; document.getElementById('tBankCustom').value = '';
+  document.getElementById('tSavingTypeCustom').value = '';
+  document.getElementById('tDate').value = new Date().toISOString().slice(0,10);
+  flashSaved(); await loadAllData(); renderAll();
+  logActivity('create', 'transactions', `${type==='income'?'Pendapatan':'Pengeluaran'} ${formatCurrency(Math.abs(amount))} - ${desc}`);
+});
+
+document.getElementById('addARBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('arName').value.trim();
+  const amount = parseFloat(document.getElementById('arAmount').value);
+  const status = document.getElementById('arStatus').value;
+  if(!name || isNaN(amount) || amount<=0){ alert('Mohon lengkapi nama dan jumlah.'); return; }
+  const { error } = await sb.from('receivables').insert({ name, amount, status });
+  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  document.getElementById('arName').value=''; document.getElementById('arAmount').value='';
+  flashSaved(); await loadAllData(); renderReceivablesPayables();
+  logActivity('create', 'receivables', `Piutang ${name} ${formatCurrency(amount)}`);
+});
+
+document.getElementById('addAPBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('apName').value.trim();
+  const amount = parseFloat(document.getElementById('apAmount').value);
+  const status = document.getElementById('apStatus').value;
+  if(!name || isNaN(amount) || amount<=0){ alert('Mohon lengkapi nama dan jumlah.'); return; }
+  const { error } = await sb.from('payables').insert({ name, amount, status });
+  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  document.getElementById('apName').value=''; document.getElementById('apAmount').value='';
+  flashSaved(); await loadAllData(); renderReceivablesPayables();
+  logActivity('create', 'payables', `Utang ${name} ${formatCurrency(amount)}`);
+});
+
+document.getElementById('addBudgetBtn').addEventListener('click', async ()=>{
+  const category = document.getElementById('bCategory').value.trim();
+  const amount = parseFloat(document.getElementById('bAmount').value);
+  if(!category || isNaN(amount) || amount<=0){ alert('Mohon lengkapi kategori dan jumlah anggaran.'); return; }
+  const { error } = await sb.from('budgets').insert({ category, amount });
+  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  document.getElementById('bCategory').value=''; document.getElementById('bAmount').value='';
+  flashSaved(); await loadAllData(); renderBudgets();
+  logActivity('create', 'budgets', `Anggaran ${category} ${formatCurrency(amount)}`);
+});
+
+document.querySelectorAll('.subtab').forEach(st=>{
+  st.addEventListener('click', ()=>{
+    const scope = st.closest('.view');
+    scope.querySelectorAll('.subtab').forEach(x=>x.classList.remove('active'));
+    scope.querySelectorAll('.subview').forEach(x=>x.classList.remove('active'));
+    st.classList.add('active');
+    scope.querySelector('#subview-'+st.dataset.subview).classList.add('active');
+  });
+});
+
+document.getElementById('addPayrollBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('pName').value.trim();
+  const month = document.getElementById('pMonth').value; // 'YYYY-MM'
+  const salary = parseFloat(document.getElementById('pSalary').value);
+  const bonus = parseFloat(document.getElementById('pBonus').value) || 0;
+  const notes = document.getElementById('pNotes').value.trim();
+  if(!name || !month || isNaN(salary) || salary < 0){ alert('Mohon lengkapi nama karyawan, bulan, dan gaji pokok yang valid.'); return; }
+  const { error } = await sb.from('payroll').insert({ employee_name: name, month, base_salary: salary, bonus, notes });
+  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  document.getElementById('pName').value=''; document.getElementById('pSalary').value='';
+  document.getElementById('pBonus').value=''; document.getElementById('pNotes').value='';
+  flashSaved(); await loadAllData(); renderPayroll();
+  logActivity('create', 'payroll', `Gaji & bonus ${name} bulan ${month} - ${formatCurrency(salary+bonus)}`);
+});
+
+document.getElementById('payrollFilterMonth').addEventListener('change', renderPayroll);
+document.getElementById('clearPayrollFilterBtn').addEventListener('click', ()=>{
+  document.getElementById('payrollFilterMonth').value = '';
+  renderPayroll();
+});
+
+document.getElementById('svType').addEventListener('change', (e)=>{
+  document.getElementById('svTypeCustom').style.display = e.target.value === 'Lainnya' ? '' : 'none';
+});
+
+document.getElementById('addSavingsBtn').addEventListener('click', async ()=>{
+  const date = document.getElementById('svDate').value;
+  const typeSelect = document.getElementById('svType').value;
+  const typeCustom = document.getElementById('svTypeCustom').value.trim();
+  const jenis = typeSelect === 'Lainnya' ? typeCustom : typeSelect;
+  const amount = parseFloat(document.getElementById('svAmount').value);
+  const notes = document.getElementById('svNotes').value.trim();
+  if(!date || !jenis || isNaN(amount) || amount <= 0){ alert('Mohon lengkapi tanggal, jenis tabungan, dan jumlah yang valid.'); return; }
+  const { error } = await sb.from('savings').insert({ date, jenis, amount, notes, created_by: currentUsername });
+  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  document.getElementById('svAmount').value=''; document.getElementById('svNotes').value='';
+  document.getElementById('svTypeCustom').value=''; document.getElementById('svTypeCustom').style.display='none';
+  document.getElementById('svType').value = 'Gaji';
+  document.getElementById('svDate').value = new Date().toISOString().slice(0,10);
+  flashSaved(); await loadAllData(); renderSavings(); renderDashboard(); renderLaporan();
+  logActivity('create', 'savings', `Setoran tabungan ${jenis} ${formatCurrency(amount)}`);
+});
+
+document.getElementById('projMonths').addEventListener('input', renderProjection);
+document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
+document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
+
+document.getElementById('addUserBtn').addEventListener('click', async ()=>{
+  const username = document.getElementById('newUsername').value.trim();
+  const password = document.getElementById('newPassword').value;
+  const role = document.getElementById('newRole').value;
+  const errEl = document.getElementById('userFormError');
+  errEl.style.display = 'none';
+  if(!username || !password){ errEl.textContent = 'Mohon isi username dan password.'; errEl.style.display='block'; return; }
+  try{
+    const { error } = await sb.rpc('create_user', { p_requester: currentUsername, p_username: username, p_password: password, p_role: role });
+    if(error) throw error;
+    document.getElementById('newUsername').value=''; document.getElementById('newPassword').value='';
+    renderUsers();
+    logActivity('create', 'app_users', `Akun baru ${username} (${role})`);
+  }catch(e){
+    errEl.textContent = e.message || 'Gagal membuat akun.'; errEl.style.display='block';
+  }
+});
+
+document.body.addEventListener('click', async (e)=>{
+  const btn = e.target.closest('button[data-action]');
+  if(!btn) return;
+  const action = btn.dataset.action;
+  if(action === 'viewProof'){
+    const path = btn.dataset.path;
+    const win = window.open('', '_blank'); // buka tab kosong dulu (hindari popup blocker)
+    try{
+      const { data, error } = await sb.storage.from('bukti-transfer').createSignedUrl(path, 600); // berlaku 10 menit
+      if(error) throw error;
+      if(win) win.location = data.signedUrl; else window.open(data.signedUrl, '_blank');
+    }catch(err){
+      if(win) win.close();
+      alert('Gagal membuka bukti transfer: ' + (err.message || err));
+    }
+    return;
+  }
+  if(action === 'delTrans'){
+    const txId = parseInt(btn.dataset.id,10);
+    const txRecord = data.transactions.find(t=>t.id===txId);
+    await sb.from('savings').delete().eq('related_transaction_id', txId);
+    const { error } = await sb.from('transactions').delete().eq('id', txId);
+    if(!error){
+      await loadAllData(); renderAll();
+      logActivity('delete', 'transactions', txRecord ? `${txRecord.amount>=0?'Pendapatan':'Pengeluaran'} ${formatCurrency(Math.abs(txRecord.amount))} - ${txRecord.description}` : `id ${txId}`);
+    }
+  } else if(action === 'delAR'){
+    const id = parseInt(btn.dataset.id,10);
+    const rec = data.receivables.find(r=>r.id===id);
+    const { error } = await sb.from('receivables').delete().eq('id', id);
+    if(!error){ await loadAllData(); renderReceivablesPayables(); logActivity('delete', 'receivables', rec ? `${rec.name} ${formatCurrency(rec.amount)}` : `id ${id}`); }
+  } else if(action === 'delAP'){
+    const id = parseInt(btn.dataset.id,10);
+    const rec = data.payables.find(p=>p.id===id);
+    const { error } = await sb.from('payables').delete().eq('id', id);
+    if(!error){ await loadAllData(); renderReceivablesPayables(); logActivity('delete', 'payables', rec ? `${rec.name} ${formatCurrency(rec.amount)}` : `id ${id}`); }
+  } else if(action === 'delBudget'){
+    const id = parseInt(btn.dataset.id,10);
+    const rec = data.budgets.find(b=>b.id===id);
+    const { error } = await sb.from('budgets').delete().eq('id', id);
+    if(!error){ await loadAllData(); renderBudgets(); logActivity('delete', 'budgets', rec ? `${rec.category} ${formatCurrency(rec.amount)}` : `id ${id}`); }
+  } else if(action === 'delPayroll'){
+    const id = parseInt(btn.dataset.id,10);
+    const rec = data.payroll.find(p=>p.id===id);
+    const { error } = await sb.from('payroll').delete().eq('id', id);
+    if(!error){ await loadAllData(); renderPayroll(); logActivity('delete', 'payroll', rec ? `${rec.employee_name} bulan ${rec.month}` : `id ${id}`); }
+  } else if(action === 'delSavings'){
+    const id = parseInt(btn.dataset.id,10);
+    const rec = data.savings.find(x=>x.id===id);
+    const { error } = await sb.from('savings').delete().eq('id', id);
+    if(!error){ await loadAllData(); renderSavings(); renderDashboard(); renderLaporan(); logActivity('delete', 'savings', rec ? `${rec.jenis} ${formatCurrency(rec.amount)}` : `id ${id}`); }
+  } else if(action === 'delUser'){
+    const username = btn.dataset.username;
+    if(!confirm(`Hapus akun "${username}"?`)) return;
+    try{
+      const { error } = await sb.rpc('delete_user', { p_requester: currentUsername, p_target: username });
+      if(error) throw error;
+      renderUsers();
+      logActivity('delete', 'app_users', `Akun ${username} dihapus`);
+    }catch(e){ alert(e.message || 'Gagal menghapus akun.'); }
+  }
+});
+
+// ---------- Init ----------
+(async function init(){
+  if(!sb) return;
+  await tryRestoreSession();
+  if(!currentRole){ document.getElementById('loginOverlay').style.display = 'flex'; }
+})();
+
+// ---------- PWA service worker ----------
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
