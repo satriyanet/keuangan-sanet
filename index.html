@@ -324,7 +324,14 @@
       <div class="card">
         <h3>Neraca sederhana</h3>
         <table id="balanceTable"></table>
-        <p class="helper">Aset lainnya diasumsikan tetap sebagai contoh; sesuaikan dengan data riil perusahaan Anda.</p>
+        <div class="form-grid" style="margin-top:12px; align-items:end;">
+          <div>
+            <label class="helper" style="display:block; margin-bottom:4px;">Aset lainnya (Rp)</label>
+            <input type="number" id="otherAssetsInput" placeholder="Aset lainnya (Rp)">
+          </div>
+          <button class="ghost" id="saveOtherAssetsBtn">Simpan</button>
+        </div>
+        <p class="helper" id="otherAssetsStatus">Contoh: peralatan, kendaraan, aset tetap lainnya milik perusahaan.</p>
       </div>
     </div>
   </div>
@@ -494,6 +501,7 @@
             <option value="receivables">Piutang</option>
             <option value="payables">Utang</option>
             <option value="app_users">Pengguna</option>
+            <option value="company_settings">Pengaturan</option>
             <option value="auth">Login</option>
           </select>
           <button class="ghost" id="refreshLogBtn">Muat ulang</button>
@@ -531,6 +539,7 @@ let currentRole = null;
 let currentUsername = null;
 let dataLoaded = false;
 let data = { transactions: [], receivables: [], payables: [], budgets: [], payroll: [], savings: [] };
+let otherAssetsValue = 5000000;
 
 // ---------- Login ----------
 document.getElementById('loginBtn').addEventListener('click', handleLogin);
@@ -631,13 +640,14 @@ function setSyncStatus(ok){
 
 async function loadAllData(){
   try{
-    const [t, r, p, b, pr, sv] = await Promise.all([
+    const [t, r, p, b, pr, sv, cs] = await Promise.all([
       sb.from('transactions').select('*').order('date', {ascending:false}),
       sb.from('receivables').select('*').order('id'),
       sb.from('payables').select('*').order('id'),
       sb.from('budgets').select('*').order('id'),
       sb.from('payroll').select('*').order('month', {ascending:false}),
-      sb.from('savings').select('*').order('date', {ascending:false})
+      sb.from('savings').select('*').order('date', {ascending:false}),
+      sb.from('company_settings').select('*').eq('id', 1).maybeSingle()
     ]);
     if(t.error) throw t.error;
     data.transactions = t.data.map(x => ({...x, amount: Number(x.amount)}));
@@ -646,6 +656,7 @@ async function loadAllData(){
     data.budgets = b.data.map(x => ({...x, amount: Number(x.amount)}));
     data.payroll = (pr.data||[]).map(x => ({...x, base_salary: Number(x.base_salary), bonus: Number(x.bonus)}));
     data.savings = (sv.data||[]).map(x => ({...x, amount: Number(x.amount)}));
+    if(cs.data){ otherAssetsValue = Number(cs.data.other_assets); }
     setSyncStatus(true);
   }catch(e){
     console.error('Gagal memuat data:', e);
@@ -860,7 +871,7 @@ function renderLaporan(){
     <tr><td style="color:var(--muted); font-size:12px; padding-top:8px;">Pemasukan Service/PSB (di luar laporan ini, lihat Tabungan)</td><td class="right" style="color:var(--muted); font-size:12px; padding-top:8px;">${formatCurrency(serviceIncome)}</td></tr>
   `;
 
-  const otherAssets = 5000000;
+  const otherAssets = otherAssetsValue;
   const grandTotal = cashBalance + totalSavings + totalServiceFund + otherAssets;
   document.getElementById('balanceTable').innerHTML = `
     <tr><td style="font-weight:600;">Aset</td><td class="right" style="font-weight:600;">${formatCurrency(grandTotal)}</td></tr>
@@ -871,6 +882,8 @@ function renderLaporan(){
     <tr style="border-top:2px solid var(--border);"><td style="font-weight:600;padding-top:10px;">Liabilitas + ekuitas</td><td class="right" style="font-weight:600;padding-top:10px;">${formatCurrency(grandTotal)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2); font-size:12px;">- termasuk kewajiban Service/PSB ke karyawan</td><td class="right" style="color:var(--text2); font-size:12px;">${formatCurrency(totalServiceFund)}</td></tr>
   `;
+  const otherAssetsInput = document.getElementById('otherAssetsInput');
+  if(document.activeElement !== otherAssetsInput){ otherAssetsInput.value = otherAssets; }
 }
 
 function statusPill(status){
@@ -1021,9 +1034,9 @@ async function logActivity(action, tableName, description){
 
 const AUDIT_TABLE_LABELS = {
   transactions: 'Transaksi', savings: 'Tabungan', payroll: 'Gaji & bonus', budgets: 'Anggaran',
-  receivables: 'Piutang', payables: 'Utang', app_users: 'Pengguna', auth: 'Login'
+  receivables: 'Piutang', payables: 'Utang', app_users: 'Pengguna', auth: 'Login', company_settings: 'Pengaturan'
 };
-const AUDIT_ACTION_LABELS = { create: 'Tambah', delete: 'Hapus', login: 'Login' };
+const AUDIT_ACTION_LABELS = { create: 'Tambah', delete: 'Hapus', login: 'Login', update: 'Ubah' };
 
 async function renderAuditLog(){
   if(currentRole !== 'owner') return;
@@ -1035,7 +1048,7 @@ async function renderAuditLog(){
     if(!rows || rows.length === 0){ tbody.innerHTML = '<tr><td colspan="5" class="empty">Belum ada aktivitas tercatat</td></tr>'; return; }
     tbody.innerHTML = rows.map(r => {
       const waktu = new Date(r.created_at).toLocaleString('id-ID', { dateStyle:'medium', timeStyle:'short' });
-      const actionPill = r.action === 'delete' ? '<span class="pill pill-red">Hapus</span>' : (r.action === 'login' ? '<span class="pill pill-purple">Login</span>' : '<span class="pill pill-green">Tambah</span>');
+      const actionPill = r.action === 'delete' ? '<span class="pill pill-red">Hapus</span>' : (r.action === 'login' ? '<span class="pill pill-purple">Login</span>' : (r.action === 'update' ? '<span class="pill pill-amber">Ubah</span>' : '<span class="pill pill-green">Tambah</span>'));
       return `<tr>
         <td>${waktu}</td>
         <td>${escapeHtml(r.username||'-')}</td>
@@ -1421,6 +1434,28 @@ document.getElementById('addSavingsBtn').addEventListener('click', async ()=>{
 });
 
 document.getElementById('projMonths').addEventListener('input', renderProjection);
+
+document.getElementById('saveOtherAssetsBtn').addEventListener('click', async ()=>{
+  const val = parseFloat(document.getElementById('otherAssetsInput').value);
+  if(isNaN(val) || val < 0){ alert('Mohon isi angka yang valid.'); return; }
+  const statusEl = document.getElementById('otherAssetsStatus');
+  const btn = document.getElementById('saveOtherAssetsBtn');
+  btn.disabled = true;
+  try{
+    const { error } = await sb.from('company_settings').upsert({ id: 1, other_assets: val });
+    if(error) throw error;
+    otherAssetsValue = val;
+    renderLaporan();
+    flashSaved();
+    logActivity('update', 'company_settings', `Aset lainnya diubah menjadi ${formatCurrency(val)}`);
+    statusEl.textContent = 'Tersimpan.';
+    setTimeout(()=>{ statusEl.textContent = 'Contoh: peralatan, kendaraan, aset tetap lainnya milik perusahaan.'; }, 2000);
+  }catch(e){
+    alert('Gagal menyimpan: ' + (e.message || e));
+  }finally{
+    btn.disabled = false;
+  }
+});
 document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
 document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
 
