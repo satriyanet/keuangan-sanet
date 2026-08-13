@@ -994,14 +994,22 @@ function renderComparison(){
 
 async function renderUsers(){
   if(currentRole !== 'owner') return;
+  const tbody = document.getElementById('usersTable');
   try{
     const { data: users, error } = await sb.rpc('list_users', { p_requester: currentUsername });
     if(error) throw error;
-    document.getElementById('usersTable').innerHTML = users.map(u => `
+    if(!users || users.length === 0){
+      tbody.innerHTML = '<tr><td colspan="3" class="empty">Belum ada akun terdaftar</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map(u => `
       <tr><td>${escapeHtml(u.username)}</td><td>${u.role === 'owner' ? 'Owner' : 'Accounting'}</td>
       <td class="right">${u.username === currentUsername ? '<span class="helper">Akun aktif</span>' : `<button class="del-btn" data-username="${escapeHtml(u.username)}" data-action="delUser">Hapus</button>`}</td></tr>
     `).join('');
-  }catch(e){ console.error(e); }
+  }catch(e){
+    console.error(e);
+    tbody.innerHTML = `<tr><td colspan="3" class="empty" style="color:var(--red);">Gagal memuat daftar akun: ${escapeHtml(e.message || String(e))}</td></tr>`;
+  }
 }
 
 // ---------- Log aktivitas ----------
