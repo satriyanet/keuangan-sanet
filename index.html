@@ -815,17 +815,27 @@ function flashSaved(){
 }
 
 let realtimeChannel = null;
+let realtimeReloadTimeout = null;
+function scheduleRealtimeReload(){
+  clearTimeout(realtimeReloadTimeout);
+  realtimeReloadTimeout = setTimeout(async ()=>{
+    await loadAllData();
+    renderAll();
+  }, 400); // debounce: kalau beberapa tabel berubah beruntun (mis. transaksi + tabungan terkait), cukup 1x reload
+}
+
 function subscribeRealtime(){
   if(realtimeChannel) return;
-  realtimeChannel = sb.channel('finance-app-changes')
-    .on('postgres_changes', {event:'*', schema:'public', table:'transactions'}, async ()=>{ await loadAllData(); renderAll(); })
-    .on('postgres_changes', {event:'*', schema:'public', table:'receivables'}, async ()=>{ await loadAllData(); renderAll(); })
-    .on('postgres_changes', {event:'*', schema:'public', table:'payables'}, async ()=>{ await loadAllData(); renderAll(); })
-    .on('postgres_changes', {event:'*', schema:'public', table:'budgets'}, async ()=>{ await loadAllData(); renderAll(); })
-    .subscribe();
+  const tables = ['transactions','receivables','payables','receivable_payments','payable_payments','kasbon','kasbon_payments','budgets','payroll','savings','company_settings'];
+  realtimeChannel = sb.channel('finance-app-changes');
+  tables.forEach(t => {
+    realtimeChannel.on('postgres_changes', {event:'*', schema:'public', table:t}, scheduleRealtimeReload);
+  });
+  realtimeChannel.subscribe();
 }
 function unsubscribeRealtime(){
   if(realtimeChannel){ sb.removeChannel(realtimeChannel); realtimeChannel = null; }
+  clearTimeout(realtimeReloadTimeout);
 }
 
 // ---------- Utils ----------
