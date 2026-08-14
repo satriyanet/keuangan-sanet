@@ -703,7 +703,7 @@ async function handleLogin(){
   }
 }
 
-document.getElementById('logoutBtn').addEventListener('click', ()=>{
+function doLogout(autoReason){
   localStorage.removeItem(SESSION_KEY);
   currentRole = null; currentUsername = null;
   document.getElementById('mainApp').style.display = 'none';
@@ -711,6 +711,34 @@ document.getElementById('logoutBtn').addEventListener('click', ()=>{
   document.getElementById('loginUsername').value = '';
   document.getElementById('loginPassword').value = '';
   unsubscribeRealtime();
+  stopInactivityTimer();
+  const errEl = document.getElementById('loginError');
+  if(autoReason){
+    errEl.textContent = autoReason;
+    errEl.style.display = 'block';
+  } else {
+    errEl.style.display = 'none';
+  }
+}
+document.getElementById('logoutBtn').addEventListener('click', ()=> doLogout());
+
+// ---------- Auto-logout karena tidak ada aktivitas ----------
+const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 menit
+let inactivityTimer = null;
+function resetInactivityTimer(){
+  if(!currentRole) return; // belum login, tidak perlu hitung
+  clearTimeout(inactivityTimer);
+  inactivityTimer = setTimeout(()=>{
+    logActivity('login', 'auth', `${currentUsername} logout otomatis (tidak aktif 5 menit)`);
+    doLogout('Anda otomatis logout karena tidak ada aktivitas selama 5 menit. Silakan masuk kembali.');
+  }, INACTIVITY_TIMEOUT_MS);
+}
+function stopInactivityTimer(){
+  clearTimeout(inactivityTimer);
+  inactivityTimer = null;
+}
+['mousemove','mousedown','keydown','touchstart','scroll'].forEach(evt=>{
+  document.addEventListener(evt, resetInactivityTimer, {passive:true});
 });
 
 const OWNER_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','proyeksi','perbandingan','pengguna','log'];
@@ -754,6 +782,7 @@ async function enterApp(){
   dataLoaded = true;
   renderAll();
   subscribeRealtime();
+  resetInactivityTimer();
 }
 
 async function tryRestoreSession(){
