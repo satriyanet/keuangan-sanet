@@ -76,6 +76,7 @@
     font-size:13px; cursor:pointer; color:var(--text2); font-family:inherit;
   }
   button.ghost:hover{background:var(--bg);}
+  button.ghost:disabled{opacity:0.4; cursor:not-allowed; background:transparent;}
   .del-btn{color:var(--red); cursor:pointer; font-size:12px; border:none; background:none; font-family:inherit;}
   .chart-wrap{position:relative; height:260px;}
   .income{color:var(--green); font-weight:600;}
@@ -253,11 +254,27 @@
           <h3 style="margin:0;">Daftar transaksi</h3>
           <span class="helper" id="transCount"></span>
         </div>
+        <div class="form-grid" style="margin-top:10px; align-items:end;">
+          <div>
+            <label class="helper" style="display:block; margin-bottom:4px;">Dari tanggal</label>
+            <input type="date" id="transFilterFrom">
+          </div>
+          <div>
+            <label class="helper" style="display:block; margin-bottom:4px;">Sampai tanggal</label>
+            <input type="date" id="transFilterTo">
+          </div>
+          <button class="ghost" id="transFilterResetBtn">Reset filter</button>
+        </div>
         <div style="overflow-x:auto; margin-top:10px;">
           <table>
             <thead><tr><th>Tanggal</th><th>Deskripsi</th><th>Kategori</th><th class="right">Jumlah</th><th>Metode</th><th>Dicatat oleh</th><th></th></tr></thead>
             <tbody id="transTable"></tbody>
           </table>
+        </div>
+        <div class="flex-between" style="margin-top:12px;">
+          <button class="ghost" id="transPrevBtn">‹ Sebelumnya</button>
+          <span class="helper" id="transPageInfo"></span>
+          <button class="ghost" id="transNextBtn">Selanjutnya ›</button>
         </div>
       </div>
     </div>
@@ -1049,12 +1066,35 @@ function renderCustomLegend(canvasId, items){
   canvas.parentElement.insertBefore(legend, canvas);
 }
 
+const TRANS_PAGE_SIZE = 20;
+let transCurrentPage = 1;
+
 function renderTransactions(){
   const tbody = document.getElementById('transTable');
-  const sorted = [...data.transactions].sort((a,b)=> b.date.localeCompare(a.date));
-  document.getElementById('transCount').textContent = sorted.length + ' transaksi';
-  if(sorted.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="empty">Belum ada transaksi</td></tr>'; return; }
-  tbody.innerHTML = sorted.map(t => {
+  const fromDate = document.getElementById('transFilterFrom').value;
+  const toDate = document.getElementById('transFilterTo').value;
+
+  let filtered = [...data.transactions];
+  if(fromDate){ filtered = filtered.filter(t => t.date >= fromDate); }
+  if(toDate){ filtered = filtered.filter(t => t.date <= toDate); }
+  const sorted = filtered.sort((a,b)=> b.date.localeCompare(a.date));
+
+  const totalCount = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / TRANS_PAGE_SIZE));
+  if(transCurrentPage > totalPages) transCurrentPage = totalPages;
+  if(transCurrentPage < 1) transCurrentPage = 1;
+
+  const startIdx = (transCurrentPage - 1) * TRANS_PAGE_SIZE;
+  const pageRows = sorted.slice(startIdx, startIdx + TRANS_PAGE_SIZE);
+
+  const filterLabel = (fromDate || toDate) ? ` (terfilter dari ${data.transactions.length})` : '';
+  document.getElementById('transCount').textContent = totalCount + ' transaksi' + filterLabel;
+  document.getElementById('transPageInfo').textContent = totalCount === 0 ? '' : `Halaman ${transCurrentPage} dari ${totalPages} · menampilkan ${pageRows.length} dari ${totalCount}`;
+  document.getElementById('transPrevBtn').disabled = transCurrentPage <= 1;
+  document.getElementById('transNextBtn').disabled = transCurrentPage >= totalPages;
+
+  if(pageRows.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="empty">Tidak ada transaksi pada rentang tanggal ini</td></tr>'; return; }
+  tbody.innerHTML = pageRows.map(t => {
     let metode = '-';
     if(t.payment_method === 'cash') metode = '<span class="pill pill-green">Cash</span>';
     else if(t.payment_method === 'transfer') metode = `<span class="pill pill-purple">Transfer ${escapeHtml(t.bank||'')}</span>`;
@@ -1190,6 +1230,17 @@ function cancelEditTransaction(){
   document.getElementById('cancelEditTransBtn').style.display = 'none';
 }
 document.getElementById('cancelEditTransBtn').addEventListener('click', cancelEditTransaction);
+
+document.getElementById('transFilterFrom').addEventListener('change', ()=>{ transCurrentPage = 1; renderTransactions(); });
+document.getElementById('transFilterTo').addEventListener('change', ()=>{ transCurrentPage = 1; renderTransactions(); });
+document.getElementById('transFilterResetBtn').addEventListener('click', ()=>{
+  document.getElementById('transFilterFrom').value = '';
+  document.getElementById('transFilterTo').value = '';
+  transCurrentPage = 1;
+  renderTransactions();
+});
+document.getElementById('transPrevBtn').addEventListener('click', ()=>{ transCurrentPage--; renderTransactions(); });
+document.getElementById('transNextBtn').addEventListener('click', ()=>{ transCurrentPage++; renderTransactions(); });
 
 function closeAllPayForms(){
   document.getElementById('arPayFormCard').style.display = 'none';
