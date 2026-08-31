@@ -218,6 +218,21 @@
             <option value="transfer">Transfer</option>
             <option value="tabungan" id="tPaymentTabunganOpt">Tabungan</option>
             <option value="service" id="tPaymentServiceOpt">Service/PSB (untuk bonus karyawan)</option>
+            <option value="voucher" id="tPaymentVoucherOpt">Voucher</option>
+          </select>
+          <select id="tSavingType" style="display:none;">
+            <option value="Gaji">Ambil dari tabungan gaji</option>
+            <option value="Profit">Ambil dari tabungan profit</option>
+            <option value="Operational">Ambil dari tabungan operational</option>
+            <option value="Bandwidth">Ambil dari tabungan bandwidth</option>
+            <option value="Service/PSB">Ambil dari dana Service/PSB</option>
+            <option value="Voucher">Ambil dari dana Voucher</option>
+            <option value="Lainnya">Jenis lainnya...</option>
+          </select>
+          <input type="text" id="tSavingTypeCustom" placeholder="Nama jenis tabungan" style="display:none;">
+          <select id="tTabunganDisbursement" style="display:none;">
+            <option value="cash">Dicairkan sebagai Cash</option>
+            <option value="transfer">Dicairkan via Transfer</option>
           </select>
           <select id="tBank" style="display:none;">
             <option value="BNI">Transfer BNI</option>
@@ -226,23 +241,15 @@
             <option value="Lainnya">Bank lainnya...</option>
           </select>
           <input type="text" id="tBankCustom" placeholder="Nama bank" style="display:none;">
-          <select id="tSavingType" style="display:none;">
-            <option value="Gaji">Ambil dari tabungan gaji</option>
-            <option value="Profit">Ambil dari tabungan profit</option>
-            <option value="Operational">Ambil dari tabungan operational</option>
-            <option value="Bandwidth">Ambil dari tabungan bandwidth</option>
-            <option value="Service/PSB">Ambil dari dana Service/PSB</option>
-            <option value="Lainnya">Jenis lainnya...</option>
-          </select>
-          <input type="text" id="tSavingTypeCustom" placeholder="Nama jenis tabungan" style="display:none;">
           <div id="tProofWrap" style="display:none;">
             <label class="helper" style="display:block; margin-bottom:4px;">Bukti transfer (gambar/PDF, maks 5MB)</label>
             <input type="file" id="tProofFile" accept="image/*,.pdf">
             <p class="helper" id="tProofExistingNote" style="display:none; margin-top:4px;">Sudah ada bukti tersimpan. Pilih file baru hanya jika ingin menggantinya.</p>
           </div>
         </div>
-        <p class="helper" id="tTabunganHelper" style="display:none;">Pengeluaran dari tabungan otomatis mengurangi saldo tabungan jenis terkait. Khusus tabungan Gaji/Profit dan Service/PSB tidak dihitung sebagai pengeluaran/pemasukan kas (karena tidak pernah masuk kas).</p>
+        <p class="helper" id="tTabunganHelper" style="display:none;">Pengeluaran dari tabungan otomatis mengurangi saldo tabungan jenis terkait. Khusus tabungan Gaji/Profit, Service/PSB, dan Voucher tidak dihitung sebagai pengeluaran/pemasukan kas (karena tidak pernah masuk kas). Kalau dana ini dipakai membayar pihak lain via transfer (mis. distributor), pilih "Dicairkan via Transfer" untuk sekalian catat bank & bukti transfernya.</p>
         <p class="helper" id="tServiceHelper" style="display:none;">Pemasukan ini <strong>tidak masuk ke kas perusahaan</strong> — otomatis masuk ke Tabungan Service/PSB untuk nantinya dibagikan sebagai service/bonus karyawan.</p>
+        <p class="helper" id="tVoucherHelper" style="display:none;">Pemasukan ini <strong>tidak masuk ke kas perusahaan</strong> — otomatis masuk ke Tabungan Voucher terpisah, dan tampil sebagai "Kas Voucher" tersendiri di Dashboard.</p>
         <p class="helper" id="tProofStatus"></p>
         <div style="display:flex; gap:8px; margin-top:8px;">
           <button class="primary" id="addTransBtn">Tambah</button>
@@ -302,6 +309,7 @@
             <option value="Operational">Tabungan operational</option>
             <option value="Bandwidth">Tabungan bandwidth</option>
             <option value="Service/PSB">Service/PSB (bonus karyawan)</option>
+            <option value="Voucher">Voucher</option>
             <option value="Lainnya">Lainnya...</option>
           </select>
           <input type="text" id="svTypeCustom" placeholder="Nama jenis tabungan" style="display:none;">
@@ -901,6 +909,14 @@ function unsubscribeRealtime(){
 function formatCurrency(num){
   return new Intl.NumberFormat('id-ID', {style:'currency', currency:'IDR', minimumFractionDigits:0}).format(Math.round(num));
 }
+function formatPaymentMethodText(t){
+  if(t.payment_method === 'cash') return 'Cash';
+  if(t.payment_method === 'transfer') return `Transfer ${t.bank||''}`.trim();
+  if(t.payment_method === 'tabungan') return `Tabungan ${t.saving_type||''}`.trim() + (t.bank ? ` (dicairkan Transfer ${t.bank})` : ' (dicairkan Cash)');
+  if(t.payment_method === 'service') return 'Service/PSB';
+  if(t.payment_method === 'voucher') return 'Voucher';
+  return '-';
+}
 function monthKey(dateStr){ return dateStr.slice(0,7); }
 function monthLabel(key){
   const [y,m] = key.split('-');
@@ -921,7 +937,8 @@ function monthlyAggregates(){
 }
 
 const SAVINGS_AS_EXPENSE_TYPES = ['gaji','profit'];
-const PASSTHROUGH_SAVINGS_TYPES = ['service/psb']; // tidak pernah menyentuh kas/laba, di kedua arah
+const PASSTHROUGH_SAVINGS_TYPES = ['service/psb','voucher']; // tidak pernah menyentuh kas/laba, di kedua arah
+const PASSTHROUGH_PAYMENT_METHODS = ['service','voucher']; // metode pemasukan yang pasangan tabungannya pass-through
 const SAVINGS_TYPE_ORDER = ['Bandwidth','Operational','Gaji','Profit'];
 const AUTO_DISTRIBUTION_PERCENT = { Bandwidth: 0.45, Operational: 0.20, Gaji: 0.15, Profit: 0.20 };
 
@@ -930,12 +947,16 @@ function isPassthroughSavingsType(jenis){
 }
 
 function financialTotals(){
-  // Pemasukan Service/PSB dikecualikan total dari pendapatan (tidak masuk kas/laba)
-  const totalIncome = data.transactions.filter(t=>t.amount>=0 && t.payment_method !== 'service').reduce((s,t)=>s+t.amount,0);
+  // Pemasukan Service/PSB & Voucher dikecualikan total dari pendapatan (tidak masuk kas/laba)
+  const totalIncome = data.transactions.filter(t=>t.amount>=0 && !PASSTHROUGH_PAYMENT_METHODS.includes(t.payment_method)).reduce((s,t)=>s+t.amount,0);
   const serviceIncome = data.transactions.filter(t=>t.amount>=0 && t.payment_method === 'service').reduce((s,t)=>s+t.amount,0);
+  const voucherIncome = data.transactions.filter(t=>t.amount>=0 && t.payment_method === 'voucher').reduce((s,t)=>s+t.amount,0);
+  const today = new Date();
+  const currentMonthKey = today.toISOString().slice(0,7);
+  const voucherIncomeThisMonth = data.transactions.filter(t=>t.amount>=0 && t.payment_method === 'voucher' && t.date.slice(0,7)===currentMonthKey).reduce((s,t)=>s+t.amount,0);
 
   const expenseTxsAll = data.transactions.filter(t=>t.amount<0);
-  // Pengeluaran yang didanai tabungan Service/PSB juga dikecualikan total (pass-through di kedua arah)
+  // Pengeluaran yang didanai tabungan pass-through (Service/PSB, Voucher) juga dikecualikan total (pass-through di kedua arah)
   const expenseTxs = expenseTxsAll.filter(t => !(t.payment_method === 'tabungan' && isPassthroughSavingsType(t.saving_type)));
   const totalExpenseTx = Math.abs(expenseTxs.reduce((s,t)=>s+t.amount,0));
 
@@ -947,9 +968,10 @@ function financialTotals(){
   const netCash = cashIncome - cashExpense;
   const netTransfer = transferIncome - transferExpense;
 
-  // Tabungan perusahaan (pool utama) TIDAK termasuk dana Service/PSB — itu pool terpisah untuk karyawan
+  // Tabungan perusahaan (pool utama) TIDAK termasuk dana pass-through (Service/PSB, Voucher) — itu pool terpisah
   const totalSavings = data.savings.filter(x => !isPassthroughSavingsType(x.jenis)).reduce((s,x)=>s+x.amount,0);
-  const totalServiceFund = data.savings.filter(x => isPassthroughSavingsType(x.jenis)).reduce((s,x)=>s+x.amount,0);
+  const totalServiceFund = data.savings.filter(x => (x.jenis||'').toLowerCase()==='service/psb').reduce((s,x)=>s+x.amount,0);
+  const totalVoucherFund = data.savings.filter(x => (x.jenis||'').toLowerCase()==='voucher').reduce((s,x)=>s+x.amount,0);
 
   // Setoran (bukan penarikan) tabungan gaji/profit dihitung sebagai pengeluaran saat disetor
   const totalSavingsAsExpense = data.savings
@@ -973,7 +995,8 @@ function financialTotals(){
 
   return {
     totalIncome, totalExpenseTx, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther,
-    totalSavings, totalServiceFund, serviceIncome, totalSavingsAsExpense, totalExpense, netProfit, cashBalance,
+    totalSavings, totalServiceFund, serviceIncome, totalVoucherFund, voucherIncome, voucherIncomeThisMonth,
+    totalSavingsAsExpense, totalExpense, netProfit, cashBalance,
     cashIncome, cashExpense, netCash, transferIncome, transferExpense, netTransfer
   };
 }
@@ -985,7 +1008,7 @@ function autoDistributedTotal(){
 let chartIE, chartProfit, chartProj, chartCompare;
 
 function renderDashboard(){
-  const { totalIncome, totalExpense, totalSavings, totalServiceFund, netProfit, cashBalance, cashIncome, cashExpense, netCash, transferIncome, transferExpense, netTransfer } = financialTotals();
+  const { totalIncome, totalExpense, totalSavings, totalServiceFund, totalVoucherFund, voucherIncomeThisMonth, netProfit, cashBalance, cashIncome, cashExpense, netCash, transferIncome, transferExpense, netTransfer } = financialTotals();
 
   const isOwner = currentRole === 'owner';
   const labaCard = isOwner ? `<div class="card"><p class="metric-label">Laba bersih</p><p class="metric-value" style="color:${netProfit>=0?'var(--green)':'var(--red)'}">${formatCurrency(netProfit)}</p></div>` : '';
@@ -997,6 +1020,7 @@ function renderDashboard(){
     <div class="card"><p class="metric-label">Saldo kas</p><p class="metric-value">${formatCurrency(cashBalance)}</p></div>
     <div class="card"><p class="metric-label">Tabungan perusahaan</p><p class="metric-value" style="color:var(--purple)">${formatCurrency(totalSavings)}</p></div>
     <div class="card"><p class="metric-label">Dana Service/PSB (bonus karyawan)</p><p class="metric-value" style="color:var(--amber)">${formatCurrency(totalServiceFund)}</p><p class="metric-sub">Tidak termasuk pendapatan/kas perusahaan</p></div>
+    <div class="card"><p class="metric-label">Kas Voucher (bulan ini)</p><p class="metric-value" style="color:var(--amber)">${formatCurrency(voucherIncomeThisMonth)}</p><p class="metric-sub">Total tabungan Voucher: ${formatCurrency(totalVoucherFund)}</p></div>
   `;
 
   const today = new Date().toISOString().slice(0,10);
@@ -1098,8 +1122,9 @@ function renderTransactions(){
     let metode = '-';
     if(t.payment_method === 'cash') metode = '<span class="pill pill-green">Cash</span>';
     else if(t.payment_method === 'transfer') metode = `<span class="pill pill-purple">Transfer ${escapeHtml(t.bank||'')}</span>`;
-    else if(t.payment_method === 'tabungan') metode = `<span class="pill pill-amber">Tabungan ${escapeHtml(t.saving_type||'')}</span>`;
+    else if(t.payment_method === 'tabungan') metode = `<span class="pill pill-amber">Tabungan ${escapeHtml(t.saving_type||'')}</span>` + (t.bank ? ` <span class="pill pill-purple">→ Transfer ${escapeHtml(t.bank)}</span>` : '');
     else if(t.payment_method === 'service') metode = '<span class="pill pill-purple">Service/PSB</span>';
+    else if(t.payment_method === 'voucher') metode = '<span class="pill pill-amber">Voucher</span>';
     if(t.proof_path){ metode += ` <button class="del-btn" style="color:var(--accent);" data-action="viewProof" data-path="${escapeHtml(t.proof_path)}">Lihat bukti</button>`; }
     else if(t.proof_url){ metode += ` <a href="${t.proof_url}" target="_blank" rel="noopener" style="font-size:12px;">Lihat bukti (lama)</a>`; }
     return `
@@ -1117,7 +1142,7 @@ function renderTransactions(){
 }
 
 function renderLaporan(){
-  const { totalIncome, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther, totalSavings, totalServiceFund, serviceIncome, totalSavingsAsExpense, netProfit, cashBalance } = financialTotals();
+  const { totalIncome, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther, totalSavings, totalServiceFund, serviceIncome, totalVoucherFund, voucherIncome, totalSavingsAsExpense, netProfit, cashBalance } = financialTotals();
   const gajiSavingsDeposit = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
   const profitSavingsDeposit = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
 
@@ -1129,18 +1154,21 @@ function renderLaporan(){
     <tr><td style="color:var(--text2);">Tabungan profit (sebagai pengeluaran saat disetor)</td><td class="right" style="color:var(--text2);">(${formatCurrency(profitSavingsDeposit)})</td></tr>
     <tr style="background:var(--green-bg);"><td style="font-weight:600;color:var(--green);padding-top:10px;">Laba bersih</td><td class="right" style="font-weight:600;color:var(--green);padding-top:10px;">${formatCurrency(netProfit)}</td></tr>
     <tr><td style="color:var(--muted); font-size:12px; padding-top:8px;">Pemasukan Service/PSB (di luar laporan ini, lihat Tabungan)</td><td class="right" style="color:var(--muted); font-size:12px; padding-top:8px;">${formatCurrency(serviceIncome)}</td></tr>
+    <tr><td style="color:var(--muted); font-size:12px;">Pemasukan Voucher (di luar laporan ini, lihat Tabungan)</td><td class="right" style="color:var(--muted); font-size:12px;">${formatCurrency(voucherIncome)}</td></tr>
   `;
 
   const otherAssets = data.assets.reduce((s,a)=>s+a.amount,0);
-  const grandTotal = cashBalance + totalSavings + totalServiceFund + otherAssets;
+  const grandTotal = cashBalance + totalSavings + totalServiceFund + totalVoucherFund + otherAssets;
   document.getElementById('balanceTable').innerHTML = `
     <tr><td style="font-weight:600;">Aset</td><td class="right" style="font-weight:600;">${formatCurrency(grandTotal)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2);">Kas & bank</td><td class="right" style="color:var(--text2);">${formatCurrency(cashBalance)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2);">Tabungan perusahaan</td><td class="right" style="color:var(--text2);">${formatCurrency(totalSavings)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2);">Dana Service/PSB (titipan karyawan)</td><td class="right" style="color:var(--text2);">${formatCurrency(totalServiceFund)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2);">Dana Voucher</td><td class="right" style="color:var(--text2);">${formatCurrency(totalVoucherFund)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2);">Aset lainnya</td><td class="right" style="color:var(--text2);">${formatCurrency(otherAssets)}</td></tr>
     <tr style="border-top:2px solid var(--border);"><td style="font-weight:600;padding-top:10px;">Liabilitas + ekuitas</td><td class="right" style="font-weight:600;padding-top:10px;">${formatCurrency(grandTotal)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2); font-size:12px;">- termasuk kewajiban Service/PSB ke karyawan</td><td class="right" style="color:var(--text2); font-size:12px;">${formatCurrency(totalServiceFund)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2); font-size:12px;">- termasuk dana Voucher</td><td class="right" style="color:var(--text2); font-size:12px;">${formatCurrency(totalVoucherFund)}</td></tr>
   `;
   renderAssets();
 }
@@ -1189,13 +1217,14 @@ function startEditTransaction(tx){
   updatePaymentFieldsVisibility();
 
   document.getElementById('tPaymentMethod').value = tx.payment_method || 'cash';
-  if(tx.payment_method === 'transfer'){
+  document.getElementById('tTabunganDisbursement').value = (tx.payment_method === 'tabungan' && tx.bank) ? 'transfer' : 'cash';
+  if(tx.payment_method === 'transfer' || (tx.payment_method === 'tabungan' && tx.bank)){
     const bankPresets = ['BNI','BCA','BPD'];
     if(bankPresets.includes(tx.bank)){ document.getElementById('tBank').value = tx.bank; }
     else { document.getElementById('tBank').value = 'Lainnya'; document.getElementById('tBankCustom').value = tx.bank || ''; }
   }
   if(tx.payment_method === 'tabungan'){
-    const typePresets = ['Gaji','Profit','Operational','Bandwidth','Service/PSB'];
+    const typePresets = ['Gaji','Profit','Operational','Bandwidth','Service/PSB','Voucher'];
     if(typePresets.includes(tx.saving_type)){ document.getElementById('tSavingType').value = tx.saving_type; }
     else { document.getElementById('tSavingType').value = 'Lainnya'; document.getElementById('tSavingTypeCustom').value = tx.saving_type || ''; }
   }
@@ -1220,6 +1249,7 @@ function cancelEditTransaction(){
   document.getElementById('tAmount').value = '';
   document.getElementById('tType').value = 'income';
   document.getElementById('tPaymentMethod').value = 'cash';
+  document.getElementById('tTabunganDisbursement').value = 'cash';
   document.getElementById('tBankCustom').value = '';
   document.getElementById('tSavingTypeCustom').value = '';
   document.getElementById('tProofFile').value = '';
@@ -1554,7 +1584,8 @@ function renderSavings(){
     total: data.savings.filter(x => (x.jenis||'').toLowerCase() === t.toLowerCase()).reduce((s,x)=>s+x.amount,0),
     isExpense: SAVINGS_AS_EXPENSE_TYPES.includes(t.toLowerCase())
   }));
-  const serviceTotal = data.savings.filter(x => isPassthroughSavingsType(x.jenis)).reduce((s,x)=>s+x.amount,0);
+  const serviceTotal = data.savings.filter(x => (x.jenis||'').toLowerCase()==='service/psb').reduce((s,x)=>s+x.amount,0);
+  const voucherTotal = data.savings.filter(x => (x.jenis||'').toLowerCase()==='voucher').reduce((s,x)=>s+x.amount,0);
   const otherTotal = data.savings
     .filter(x => !types.some(t=>t.toLowerCase() === (x.jenis||'').toLowerCase()) && !isPassthroughSavingsType(x.jenis))
     .reduce((s,x)=>s+x.amount,0);
@@ -1568,6 +1599,10 @@ function renderSavings(){
     <div class="card">
       <p class="metric-label">Service/PSB <span class="pill pill-purple" style="margin-left:4px;">di luar kas</span></p>
       <p class="metric-value">${formatCurrency(serviceTotal)}</p>
+    </div>
+    <div class="card">
+      <p class="metric-label">Voucher <span class="pill pill-purple" style="margin-left:4px;">di luar kas</span></p>
+      <p class="metric-value">${formatCurrency(voucherTotal)}</p>
     </div>` + (otherTotal > 0 ? `
     <div class="card">
       <p class="metric-label">Tabungan lainnya</p>
@@ -1627,7 +1662,7 @@ function renderAll(){
 
 function exportExcel(){
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.transactions.map(t => ({ Tanggal: t.date, Deskripsi: t.description, Kategori: t.category || '', Tipe: t.amount>=0 ? 'Pendapatan' : 'Pengeluaran', 'Jumlah (Rp)': t.amount, Metode: t.payment_method === 'transfer' ? `Transfer ${t.bank||''}` : (t.payment_method === 'cash' ? 'Cash' : (t.payment_method === 'tabungan' ? `Tabungan ${t.saving_type||''}` : (t.payment_method === 'service' ? 'Service/PSB' : '-'))), 'Bukti transfer': (t.proof_path || t.proof_url) ? 'Ada (buka di aplikasi)' : '-', 'Dicatat oleh': t.created_by || '' }))), 'Transaksi');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.transactions.map(t => ({ Tanggal: t.date, Deskripsi: t.description, Kategori: t.category || '', Tipe: t.amount>=0 ? 'Pendapatan' : 'Pengeluaran', 'Jumlah (Rp)': t.amount, Metode: formatPaymentMethodText(t), 'Bukti transfer': (t.proof_path || t.proof_url) ? 'Ada (buka di aplikasi)' : '-', 'Dicatat oleh': t.created_by || '' }))), 'Transaksi');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.receivables.map(r => ({ Tanggal:r.date||'', Pelanggan:r.name, 'Pinjaman (Rp)':r.amount, 'Terbayar (Rp)':paidFor(data.receivablePayments,'receivable_id',r.id), 'Sisa (Rp)':r.amount-paidFor(data.receivablePayments,'receivable_id',r.id), Catatan:r.notes||'' }))), 'Piutang');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.receivablePayments.map(p => { const rec=data.receivables.find(r=>r.id===p.receivable_id); return { Tanggal:p.date, Pelanggan:rec?rec.name:'', 'Jumlah (Rp)':p.amount, Catatan:p.notes||'', 'Dicatat oleh':p.created_by||'' }; })), 'Pembayaran Piutang');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.payables.map(p => ({ Tanggal:p.date||'', Supplier:p.name, 'Utang (Rp)':p.amount, 'Terbayar (Rp)':paidFor(data.payablePayments,'payable_id',p.id), 'Sisa (Rp)':p.amount-paidFor(data.payablePayments,'payable_id',p.id), Catatan:p.notes||'' }))), 'Utang');
@@ -1687,7 +1722,7 @@ function exportPdf(){
   doc.autoTable({ startY: y+4, head: [['Tanggal', 'Jenis', 'Jumlah', 'Sbg. pengeluaran?']], body: [...data.savings].sort((a,b)=>b.date.localeCompare(a.date)).map(x => [x.date, x.jenis, formatCurrency(x.amount), SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase())?'Ya':'Tidak']), theme: 'grid', headStyles: {fillColor: [42,120,214]}, styles: {fontSize: 8} });
   doc.addPage();
   doc.setFontSize(12); doc.text('Riwayat transaksi', 14, 18);
-  doc.autoTable({ startY: 22, head: [['Tanggal', 'Deskripsi', 'Kategori', 'Jumlah', 'Metode', 'Dicatat oleh']], body: [...data.transactions].sort((a,b)=>b.date.localeCompare(a.date)).map(t => [t.date, t.description, t.category||'-', formatCurrency(t.amount), t.payment_method==='transfer' ? `Transfer ${t.bank||''}` : (t.payment_method==='cash' ? 'Cash' : (t.payment_method==='tabungan' ? `Tabungan ${t.saving_type||''}` : (t.payment_method==='service' ? 'Service/PSB' : '-'))), t.created_by||'-']), theme: 'grid', headStyles: {fillColor: [42,120,214]}, styles: {fontSize: 8} });
+  doc.autoTable({ startY: 22, head: [['Tanggal', 'Deskripsi', 'Kategori', 'Jumlah', 'Metode', 'Dicatat oleh']], body: [...data.transactions].sort((a,b)=>b.date.localeCompare(a.date)).map(t => [t.date, t.description, t.category||'-', formatCurrency(t.amount), formatPaymentMethodText(t), t.created_by||'-']), theme: 'grid', headStyles: {fillColor: [42,120,214]}, styles: {fontSize: 8} });
   doc.save(`laporan-keuangan-${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
@@ -1709,16 +1744,22 @@ function updatePaymentFieldsVisibility(){
   document.getElementById('tPaymentRow').style.display = '';
   document.getElementById('tPaymentTabunganOpt').style.display = isIncome ? 'none' : '';
   document.getElementById('tPaymentServiceOpt').style.display = isIncome ? '' : 'none';
+  document.getElementById('tPaymentVoucherOpt').style.display = isIncome ? '' : 'none';
   const methodSelect = document.getElementById('tPaymentMethod');
   if(isIncome && methodSelect.value === 'tabungan'){ methodSelect.value = 'cash'; }
-  if(!isIncome && methodSelect.value === 'service'){ methodSelect.value = 'cash'; }
+  if(!isIncome && (methodSelect.value === 'service' || methodSelect.value === 'voucher')){ methodSelect.value = 'cash'; }
   updateMethodFieldsVisibility();
 }
 function updateMethodFieldsVisibility(){
   const method = document.getElementById('tPaymentMethod').value;
-  const isTransfer = method === 'transfer';
   const isTabungan = method === 'tabungan';
   const isService = method === 'service';
+  const isVoucher = method === 'voucher';
+  const disbursement = document.getElementById('tTabunganDisbursement').value;
+  // Transfer terlihat kalau metode langsung Transfer, ATAU Tabungan yang dicairkan via Transfer
+  const isTransfer = method === 'transfer' || (isTabungan && disbursement === 'transfer');
+
+  document.getElementById('tTabunganDisbursement').style.display = isTabungan ? '' : 'none';
   document.getElementById('tBank').style.display = isTransfer ? '' : 'none';
   document.getElementById('tBankCustom').style.display = (isTransfer && document.getElementById('tBank').value === 'Lainnya') ? '' : 'none';
   document.getElementById('tProofWrap').style.display = isTransfer ? '' : 'none';
@@ -1726,9 +1767,11 @@ function updateMethodFieldsVisibility(){
   document.getElementById('tSavingTypeCustom').style.display = (isTabungan && document.getElementById('tSavingType').value === 'Lainnya') ? '' : 'none';
   document.getElementById('tTabunganHelper').style.display = isTabungan ? '' : 'none';
   document.getElementById('tServiceHelper').style.display = isService ? '' : 'none';
+  document.getElementById('tVoucherHelper').style.display = isVoucher ? '' : 'none';
 }
 document.getElementById('tType').addEventListener('change', updatePaymentFieldsVisibility);
 document.getElementById('tPaymentMethod').addEventListener('change', updateMethodFieldsVisibility);
+document.getElementById('tTabunganDisbursement').addEventListener('change', updateMethodFieldsVisibility);
 document.getElementById('tBank').addEventListener('change', updateMethodFieldsVisibility);
 document.getElementById('tSavingType').addEventListener('change', updateMethodFieldsVisibility);
 updatePaymentFieldsVisibility();
@@ -1782,7 +1825,24 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
   const isEditing = editingTransactionId !== null;
   const existingTx = isEditing ? data.transactions.find(t=>t.id===editingTransactionId) : null;
 
-  if(paymentMethod === 'transfer'){
+  const isTabungan = paymentMethod === 'tabungan' && type === 'expense';
+  const tabunganDisbursement = document.getElementById('tTabunganDisbursement').value; // 'cash' | 'transfer'
+  const effectiveTransfer = paymentMethod === 'transfer' || (isTabungan && tabunganDisbursement === 'transfer');
+
+  if(isTabungan){
+    const typeSelect = document.getElementById('tSavingType').value;
+    savingType = typeSelect === 'Lainnya' ? document.getElementById('tSavingTypeCustom').value.trim() : typeSelect;
+    if(!savingType){ alert('Mohon pilih jenis tabungan.'); return; }
+    let currentBalance = data.savings.filter(x => (x.jenis||'').toLowerCase() === savingType.toLowerCase()).reduce((s,x)=>s+x.amount,0);
+    if(isEditing && existingTx && existingTx.payment_method === 'tabungan' && (existingTx.saving_type||'').toLowerCase() === savingType.toLowerCase()){
+      currentBalance += Math.abs(existingTx.amount); // kembalikan dulu penarikan lama sebelum divalidasi ulang
+    }
+    if(currentBalance < amountRaw){
+      if(!confirm(`Saldo tabungan ${savingType} saat ini hanya ${formatCurrency(currentBalance)}, kurang dari ${formatCurrency(amountRaw)}. Tetap lanjutkan?`)) return;
+    }
+  }
+
+  if(effectiveTransfer){
     const bankSelect = document.getElementById('tBank').value;
     bank = bankSelect === 'Lainnya' ? document.getElementById('tBankCustom').value.trim() : bankSelect;
     if(!bank){ alert('Mohon isi nama bank.'); return; }
@@ -1799,20 +1859,21 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
     } else if(isEditing && existingTx){
       proofPath = existingTx.proof_path || null; // pertahankan bukti lama kalau tidak upload baru
     }
-  } else if(paymentMethod === 'tabungan' && type === 'expense'){
-    const typeSelect = document.getElementById('tSavingType').value;
-    savingType = typeSelect === 'Lainnya' ? document.getElementById('tSavingTypeCustom').value.trim() : typeSelect;
-    if(!savingType){ alert('Mohon pilih jenis tabungan.'); return; }
-    let currentBalance = data.savings.filter(x => (x.jenis||'').toLowerCase() === savingType.toLowerCase()).reduce((s,x)=>s+x.amount,0);
-    if(isEditing && existingTx && existingTx.payment_method === 'tabungan' && (existingTx.saving_type||'').toLowerCase() === savingType.toLowerCase()){
-      currentBalance += Math.abs(existingTx.amount); // kembalikan dulu penarikan lama sebelum divalidasi ulang
-    }
-    if(currentBalance < amountRaw){
-      if(!confirm(`Saldo tabungan ${savingType} saat ini hanya ${formatCurrency(currentBalance)}, kurang dari ${formatCurrency(amountRaw)}. Tetap lanjutkan?`)) return;
-    }
   }
 
   btn.disabled = true;
+
+  // Entri tabungan otomatis yang mengikuti transaksi ini (penarikan tabungan, atau setoran service/voucher)
+  function buildLinkedSavingsRow(txId){
+    if(paymentMethod === 'tabungan' && savingType){
+      return { date, jenis: savingType, amount: -amountRaw, notes: `Penarikan untuk pengeluaran: ${desc}`, source: 'expense_withdrawal', related_transaction_id: txId, created_by: currentUsername };
+    } else if(paymentMethod === 'service' && type === 'income'){
+      return { date, jenis: 'Service/PSB', amount: amountRaw, notes: `Otomatis dari pemasukan service: ${desc}`, source: 'service_income', related_transaction_id: txId, created_by: currentUsername };
+    } else if(paymentMethod === 'voucher' && type === 'income'){
+      return { date, jenis: 'Voucher', amount: amountRaw, notes: `Otomatis dari pemasukan voucher: ${desc}`, source: 'voucher_income', related_transaction_id: txId, created_by: currentUsername };
+    }
+    return null;
+  }
 
   if(isEditing){
     const txId = editingTransactionId;
@@ -1825,19 +1886,8 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
 
     // Hapus link tabungan lama (kalau ada), lalu buat ulang sesuai nilai baru
     await sb.from('savings').delete().eq('related_transaction_id', txId);
-    if(paymentMethod === 'tabungan' && savingType){
-      await sb.from('savings').insert({
-        date, jenis: savingType, amount: -amountRaw,
-        notes: `Penarikan untuk pengeluaran: ${desc}`, source: 'expense_withdrawal',
-        related_transaction_id: txId, created_by: currentUsername
-      });
-    } else if(paymentMethod === 'service' && type === 'income'){
-      await sb.from('savings').insert({
-        date, jenis: 'Service/PSB', amount: amountRaw,
-        notes: `Otomatis dari pemasukan service: ${desc}`, source: 'service_income',
-        related_transaction_id: txId, created_by: currentUsername
-      });
-    }
+    const linkedRow = buildLinkedSavingsRow(txId);
+    if(linkedRow){ await sb.from('savings').insert(linkedRow); }
 
     btn.disabled = false; statusEl.textContent = '';
     cancelEditTransaction();
@@ -1853,22 +1903,11 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
   }).select();
   if(error){ btn.disabled = false; statusEl.textContent = ''; alert('Gagal menyimpan: ' + error.message); return; }
 
-  if(paymentMethod === 'tabungan' && savingType){
-    const txId = inserted && inserted[0] ? inserted[0].id : null;
-    const { error: svError } = await sb.from('savings').insert({
-      date, jenis: savingType, amount: -amountRaw,
-      notes: `Penarikan untuk pengeluaran: ${desc}`, source: 'expense_withdrawal',
-      related_transaction_id: txId, created_by: currentUsername
-    });
-    if(svError){ alert('Transaksi tersimpan, tapi gagal mencatat penarikan tabungan: ' + svError.message); }
-  } else if(paymentMethod === 'service' && type === 'income'){
-    const txId = inserted && inserted[0] ? inserted[0].id : null;
-    const { error: svError } = await sb.from('savings').insert({
-      date, jenis: 'Service/PSB', amount: amountRaw,
-      notes: `Otomatis dari pemasukan service: ${desc}`, source: 'service_income',
-      related_transaction_id: txId, created_by: currentUsername
-    });
-    if(svError){ alert('Transaksi tersimpan, tapi gagal mencatat ke tabungan Service/PSB: ' + svError.message); }
+  const txId = inserted && inserted[0] ? inserted[0].id : null;
+  const linkedRow = buildLinkedSavingsRow(txId);
+  if(linkedRow){
+    const { error: svError } = await sb.from('savings').insert(linkedRow);
+    if(svError){ alert('Transaksi tersimpan, tapi gagal mencatat ke tabungan terkait: ' + svError.message); }
   }
 
   btn.disabled = false; statusEl.textContent = '';
@@ -1876,6 +1915,7 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
   document.getElementById('tCategory').value = ''; document.getElementById('tAmount').value = '';
   document.getElementById('tProofFile').value = ''; document.getElementById('tBankCustom').value = '';
   document.getElementById('tSavingTypeCustom').value = '';
+  document.getElementById('tTabunganDisbursement').value = 'cash';
   document.getElementById('tDate').value = new Date().toISOString().slice(0,10);
   flashSaved(); await loadAllData(); renderAll();
   logActivity('create', 'transactions', `${type==='income'?'Pendapatan':'Pengeluaran'} ${formatCurrency(Math.abs(amount))} - ${desc}`);
