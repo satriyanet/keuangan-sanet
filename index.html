@@ -294,13 +294,19 @@
     <div class="subview" id="subview-tabungan">
       <div class="card">
         <h3>Distribusi otomatis dari kas cash</h3>
-        <p class="helper" style="margin-top:0;">Dihitung dari Pemasukan cash dikurangi Pengeluaran cash, lalu dibagi otomatis: Bandwidth 45%, Operational 20%, Gaji 15%, Profit 20%.</p>
+        <p class="helper" style="margin-top:0;">Dihitung dari Pemasukan cash dikurangi Pengeluaran cash, lalu dibagi otomatis: Bandwidth 45%, Operational 20%, Gaji 15%, Profit 20%. Jumlah per jenis bisa diedit manual sebelum disimpan (misal untuk pembulatan setoran).</p>
         <div class="grid grid-4" id="distribusiSummary"></div>
         <div class="form-grid" style="margin-top:12px;">
           <input type="number" id="distribusiAmount" placeholder="Jumlah untuk didistribusikan (Rp)">
-          <button class="primary" id="distribusiBtn">Distribusikan sekarang</button>
         </div>
-        <p class="helper" id="distribusiPreview"></p>
+        <div class="grid grid-4" id="distribusiEditRow" style="margin-top:10px;"></div>
+        <div class="flex-between" style="margin-top:10px;">
+          <span class="helper" id="distribusiTotalCheck"></span>
+          <div style="display:flex; gap:8px;">
+            <button class="ghost" id="distribusiResetBtn">Reset ke hitungan otomatis</button>
+            <button class="primary" id="distribusiBtn">Distribusikan sekarang</button>
+          </div>
+        </div>
       </div>
 
       <div class="card" style="margin-top:16px;">
@@ -1740,6 +1746,8 @@ function renderSavings(){
   renderDistribusi();
 }
 
+let distribusiUserEdited = false; // true kalau admin sudah mengubah salah satu input manual
+
 function renderDistribusi(){
   const { netCash } = financialTotals();
   const alreadyDistributed = autoDistributedTotal();
@@ -1753,15 +1761,59 @@ function renderDistribusi(){
 
   const amountInput = document.getElementById('distribusiAmount');
   if(document.activeElement !== amountInput){ amountInput.value = belumDistribusi > 0 ? Math.round(belumDistribusi) : ''; }
-  updateDistribusiPreview();
+
+  // Buat input per jenis kalau belum ada, sekali saja
+  const editRow = document.getElementById('distribusiEditRow');
+  if(editRow.children.length === 0){
+    editRow.innerHTML = SAVINGS_TYPE_ORDER.map(t => `
+      <div>
+        <label class="helper" style="display:block; margin-bottom:4px;">${t} (${Math.round(AUTO_DISTRIBUTION_PERCENT[t]*100)}%)</label>
+        <input type="number" id="distribusiInput_${t}" data-type="${t}" class="distribusi-input">
+      </div>
+    `).join('');
+    SAVINGS_TYPE_ORDER.forEach(t => {
+      document.getElementById('distribusiInput_'+t).addEventListener('input', ()=>{
+        distribusiUserEdited = true;
+        updateDistribusiTotalCheck();
+      });
+    });
+  }
+
+  if(!distribusiUserEdited){ recalcDistribusiFromPercent(); }
+  updateDistribusiTotalCheck();
 }
 
-function updateDistribusiPreview(){
+function recalcDistribusiFromPercent(){
   const amount = parseFloat(document.getElementById('distribusiAmount').value) || 0;
-  if(amount <= 0){ document.getElementById('distribusiPreview').textContent = ''; return; }
-  const parts = SAVINGS_TYPE_ORDER.map(t => `${t} ${formatCurrency(amount * AUTO_DISTRIBUTION_PERCENT[t])}`);
-  document.getElementById('distribusiPreview').textContent = 'Akan dibagi: ' + parts.join(' · ');
+  SAVINGS_TYPE_ORDER.forEach(t => {
+    document.getElementById('distribusiInput_'+t).value = amount > 0 ? Math.round(amount * AUTO_DISTRIBUTION_PERCENT[t]) : '';
+  });
 }
+
+function updateDistribusiTotalCheck(){
+  const amount = parseFloat(document.getElementById('distribusiAmount').value) || 0;
+  const sumFields = SAVINGS_TYPE_ORDER.reduce((s,t) => s + (parseFloat(document.getElementById('distribusiInput_'+t).value) || 0), 0);
+  const selisih = sumFields - amount;
+  const checkEl = document.getElementById('distribusiTotalCheck');
+  if(amount <= 0 && sumFields <= 0){ checkEl.textContent = ''; return; }
+  if(Math.abs(selisih) < 1){
+    checkEl.innerHTML = `Total pembagian: <strong>${formatCurrency(sumFields)}</strong> — sudah pas.`;
+    checkEl.style.color = 'var(--green)';
+  } else {
+    checkEl.innerHTML = `Total pembagian: <strong>${formatCurrency(sumFields)}</strong> (${selisih>0?'lebih':'kurang'} ${formatCurrency(Math.abs(selisih))} dari jumlah di atas — tidak masalah, silakan sesuaikan sendiri).`;
+    checkEl.style.color = 'var(--amber)';
+  }
+}
+
+document.getElementById('distribusiAmount').addEventListener('input', ()=>{
+  if(!distribusiUserEdited){ recalcDistribusiFromPercent(); }
+  updateDistribusiTotalCheck();
+});
+document.getElementById('distribusiResetBtn').addEventListener('click', ()=>{
+  distribusiUserEdited = false;
+  recalcDistribusiFromPercent();
+  updateDistribusiTotalCheck();
+});
 
 function renderAll(){
   renderDashboard(); renderTransactions(); renderLaporan(); renderReceivables(); renderPayables(); renderKasbon(); renderRekomendasiPelunasan(); renderBudgets(); renderPayroll(); renderSavings(); renderProjection();
@@ -1950,22 +2002,28 @@ document.getElementById('tBank').addEventListener('change', updateMethodFieldsVi
 document.getElementById('tSavingType').addEventListener('change', updateMethodFieldsVisibility);
 updatePaymentFieldsVisibility();
 
-document.getElementById('distribusiAmount').addEventListener('input', updateDistribusiPreview);
 document.getElementById('distribusiBtn').addEventListener('click', async ()=>{
-  const amount = parseFloat(document.getElementById('distribusiAmount').value);
-  if(isNaN(amount) || amount <= 0){ alert('Mohon isi jumlah yang valid untuk didistribusikan.'); return; }
+  const amounts = {};
+  let sumFields = 0;
+  for(const t of SAVINGS_TYPE_ORDER){
+    const val = Math.round(parseFloat(document.getElementById('distribusiInput_'+t).value) || 0);
+    amounts[t] = val;
+    sumFields += val;
+  }
+  if(sumFields <= 0){ alert('Mohon isi jumlah yang valid untuk didistribusikan.'); return; }
   const btn = document.getElementById('distribusiBtn');
   btn.disabled = true; btn.textContent = 'Memproses...';
   const today = new Date().toISOString().slice(0,10);
   try{
-    const rows = SAVINGS_TYPE_ORDER.map(t => ({
-      date: today, jenis: t, amount: Math.round(amount * AUTO_DISTRIBUTION_PERCENT[t]),
+    const rows = SAVINGS_TYPE_ORDER.filter(t => amounts[t] !== 0).map(t => ({
+      date: today, jenis: t, amount: amounts[t],
       notes: 'Distribusi otomatis dari kas cash', source: 'auto_distribution', created_by: currentUsername
     }));
     const { error } = await sb.from('savings').insert(rows);
     if(error) throw error;
+    distribusiUserEdited = false;
     flashSaved(); await loadAllData(); renderSavings(); renderDashboard(); renderLaporan();
-    logActivity('create', 'savings', `Distribusi otomatis ${formatCurrency(amount)} ke 4 jenis tabungan`);
+    logActivity('create', 'savings', `Distribusi manual/otomatis ${formatCurrency(sumFields)} ke tabungan (${SAVINGS_TYPE_ORDER.map(t=>t+': '+formatCurrency(amounts[t])).join(', ')})`);
   }catch(e){
     alert('Gagal mendistribusikan: ' + (e.message || e));
   }finally{
