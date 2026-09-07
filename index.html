@@ -328,12 +328,18 @@
 
       <div class="card" style="margin-top:16px;">
         <div class="flex-between">
-          <h3 style="margin:0;">Riwayat setoran tabungan</h3>
-          <span class="helper" id="savingsTotalLabel"></span>
+          <h3 style="margin:0;">Riwayat tabungan</h3>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <label class="helper" style="margin:0;">Pilih tabungan</label>
+            <select id="savingsFilterType" style="width:200px;">
+              <option value="">Semua jenis</option>
+            </select>
+          </div>
         </div>
+        <p class="helper" id="savingsTotalLabel" style="margin-top:6px;"></p>
         <div style="overflow-x:auto; margin-top:10px;">
           <table>
-            <thead><tr><th>Tanggal</th><th>Jenis</th><th class="right">Jumlah</th><th>Catatan</th><th></th></tr></thead>
+            <thead><tr id="savingsTableHead"><th>Tanggal</th><th>Jenis</th><th class="right">Jumlah</th><th>Catatan</th><th></th></tr></thead>
             <tbody id="savingsTable"></tbody>
           </table>
         </div>
@@ -1673,26 +1679,64 @@ function renderSavings(){
       <p class="metric-value">${formatCurrency(otherTotal)}</p>
     </div>` : '');
 
-  const sorted = [...data.savings].sort((a,b)=> b.date.localeCompare(a.date));
+  // Isi ulang dropdown pilihan jenis tabungan (pakai daftar jenis yang benar-benar ada di data)
+  const filterEl = document.getElementById('savingsFilterType');
+  const previousValue = filterEl.value;
+  const distinctTypes = [...new Set(data.savings.map(x => x.jenis).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  filterEl.innerHTML = '<option value="">Semua jenis</option>' + distinctTypes.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  if(distinctTypes.includes(previousValue)){ filterEl.value = previousValue; }
+
+  const selectedType = filterEl.value;
+  const theadRow = document.getElementById('savingsTableHead');
   const tbody = document.getElementById('savingsTable');
-  if(sorted.length === 0){
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">Belum ada riwayat tabungan</td></tr>';
+
+  if(selectedType){
+    // Mode buku tabungan: urut dari lama ke baru, dengan saldo berjalan — mudah dicocokkan dengan buku tabungan fisik
+    theadRow.innerHTML = '<th>Tanggal</th><th>Jenis</th><th class="right">Jumlah</th><th class="right">Saldo</th><th>Catatan</th><th></th>';
+    const filtered = data.savings.filter(x => x.jenis === selectedType).sort((a,b)=> a.date.localeCompare(b.date) || a.id - b.id);
+    if(filtered.length === 0){
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Belum ada riwayat untuk jenis ini</td></tr>';
+    } else {
+      let running = 0;
+      tbody.innerHTML = filtered.map(x => {
+        running += x.amount;
+        const isWithdrawal = x.amount < 0;
+        const badge = isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
+        return `
+        <tr>
+          <td>${x.date}</td>
+          <td>${escapeHtml(x.jenis)} ${badge}</td>
+          <td class="right" style="font-weight:600; color:${isWithdrawal?'var(--red)':'var(--text)'};">${formatCurrency(x.amount)}</td>
+          <td class="right" style="font-weight:600;">${formatCurrency(running)}</td>
+          <td>${escapeHtml(x.notes||'-')}</td>
+          <td class="right"><button class="del-btn" data-id="${x.id}" data-action="delSavings">Hapus</button></td>
+        </tr>`;
+      }).join('');
+    }
+    const total = filtered.reduce((s,x)=>s+x.amount,0);
+    document.getElementById('savingsTotalLabel').textContent = `Saldo akhir ${selectedType}: ${formatCurrency(total)} · Urut dari transaksi terlama ke terbaru, cocokkan dengan buku tabungan fisik Anda.`;
   } else {
-    tbody.innerHTML = sorted.map(x => {
-      const isWithdrawal = x.amount < 0;
-      const badge = isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
-      return `
-      <tr>
-        <td>${x.date}</td>
-        <td>${escapeHtml(x.jenis)} ${badge}</td>
-        <td class="right" style="font-weight:600; color:${isWithdrawal?'var(--red)':'var(--text)'};">${formatCurrency(x.amount)}</td>
-        <td>${escapeHtml(x.notes||'-')}</td>
-        <td class="right"><button class="del-btn" data-id="${x.id}" data-action="delSavings">Hapus</button></td>
-      </tr>`;
-    }).join('');
+    theadRow.innerHTML = '<th>Tanggal</th><th>Jenis</th><th class="right">Jumlah</th><th>Catatan</th><th></th>';
+    const sorted = [...data.savings].sort((a,b)=> b.date.localeCompare(a.date));
+    if(sorted.length === 0){
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">Belum ada riwayat tabungan</td></tr>';
+    } else {
+      tbody.innerHTML = sorted.map(x => {
+        const isWithdrawal = x.amount < 0;
+        const badge = isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
+        return `
+        <tr>
+          <td>${x.date}</td>
+          <td>${escapeHtml(x.jenis)} ${badge}</td>
+          <td class="right" style="font-weight:600; color:${isWithdrawal?'var(--red)':'var(--text)'};">${formatCurrency(x.amount)}</td>
+          <td>${escapeHtml(x.notes||'-')}</td>
+          <td class="right"><button class="del-btn" data-id="${x.id}" data-action="delSavings">Hapus</button></td>
+        </tr>`;
+      }).join('');
+    }
+    const total = data.savings.reduce((s,x)=>s+x.amount,0);
+    document.getElementById('savingsTotalLabel').textContent = 'Total semua tabungan: ' + formatCurrency(total);
   }
-  const total = data.savings.reduce((s,x)=>s+x.amount,0);
-  document.getElementById('savingsTotalLabel').textContent = 'Total tabungan: ' + formatCurrency(total);
   renderDistribusi();
 }
 
@@ -2294,6 +2338,7 @@ document.getElementById('exportExcelBtn').addEventListener('click', exportExcel)
 document.getElementById('exportPdfBtn').addEventListener('click', exportPdf);
 
 document.getElementById('rekomendasiPercent').addEventListener('input', renderRekomendasiPelunasan);
+document.getElementById('savingsFilterType').addEventListener('change', renderSavings);
 
 document.getElementById('addUserBtn').addEventListener('click', async ()=>{
   const username = document.getElementById('newUsername').value.trim();
