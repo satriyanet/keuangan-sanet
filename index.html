@@ -219,7 +219,10 @@
             <option value="tabungan" id="tPaymentTabunganOpt">Tabungan</option>
             <option value="service" id="tPaymentServiceOpt">Service/PSB (untuk bonus karyawan)</option>
             <option value="voucher" id="tPaymentVoucherOpt">Voucher</option>
+            <option value="piutang" id="tPaymentPiutangOpt">Piutang (uang dipinjamkan)</option>
+            <option value="hutang" id="tPaymentHutangOpt">Hutang (uang dipinjam)</option>
           </select>
+          <input type="text" id="tLoanPartyName" placeholder="Nama peminjam/pemberi pinjaman" style="display:none;">
           <select id="tSavingType" style="display:none;">
             <option value="Gaji">Ambil dari tabungan gaji</option>
             <option value="Profit">Ambil dari tabungan profit</option>
@@ -231,8 +234,8 @@
           </select>
           <input type="text" id="tSavingTypeCustom" placeholder="Nama jenis tabungan" style="display:none;">
           <select id="tTabunganDisbursement" style="display:none;">
-            <option value="cash">Dicairkan sebagai Cash</option>
-            <option value="transfer">Dicairkan via Transfer</option>
+            <option value="cash">Dicairkan/dibayar sebagai Cash</option>
+            <option value="transfer">Dicairkan/dibayar via Transfer</option>
           </select>
           <select id="tBank" style="display:none;">
             <option value="BNI">Transfer BNI</option>
@@ -250,6 +253,8 @@
         <p class="helper" id="tTabunganHelper" style="display:none;">Pengeluaran dari tabungan otomatis mengurangi saldo tabungan jenis terkait. Khusus tabungan Gaji/Profit, Service/PSB, dan Voucher tidak dihitung sebagai pengeluaran/pemasukan kas (karena tidak pernah masuk kas). Kalau dana ini dipakai membayar pihak lain via transfer (mis. distributor), pilih "Dicairkan via Transfer" untuk sekalian catat bank & bukti transfernya.</p>
         <p class="helper" id="tServiceHelper" style="display:none;">Pemasukan ini <strong>tidak masuk ke kas perusahaan</strong> — otomatis masuk ke Tabungan Service/PSB untuk nantinya dibagikan sebagai service/bonus karyawan.</p>
         <p class="helper" id="tVoucherHelper" style="display:none;">Pemasukan ini <strong>tidak masuk ke kas perusahaan</strong> — otomatis masuk ke Tabungan Voucher terpisah, dan tampil sebagai "Kas Voucher" tersendiri di Dashboard.</p>
+        <p class="helper" id="tPiutangHelper" style="display:none;">Uang ini <strong>keluar dari kas</strong> (dipinjamkan), otomatis muncul di tab Piutang & Utang → Piutang. Tidak dihitung sebagai pengeluaran/mengurangi laba — cuma tukar bentuk dari kas jadi piutang.</p>
+        <p class="helper" id="tHutangHelper" style="display:none;">Uang ini <strong>masuk ke kas</strong> (dipinjam dari pihak lain), otomatis muncul di tab Piutang & Utang → Utang. Tidak dihitung sebagai pendapatan/menambah laba — cuma tukar bentuk dari kewajiban jadi kas.</p>
         <p class="helper" id="tProofStatus"></p>
         <div style="display:flex; gap:8px; margin-top:8px;">
           <button class="primary" id="addTransBtn">Tambah</button>
@@ -415,10 +420,15 @@
         <div class="form-grid">
           <input type="date" id="arPayDate">
           <input type="number" id="arPayAmount" placeholder="Jumlah dibayar (Rp)">
+          <select id="arPayMethod">
+            <option value="cash">Diterima Cash</option>
+            <option value="transfer">Diterima Transfer</option>
+          </select>
           <input type="text" id="arPayNotes" placeholder="Catatan (opsional)">
           <button class="primary" id="arPaySaveBtn">Simpan pembayaran</button>
           <button class="ghost" id="arPayCancelBtn">Batal</button>
         </div>
+        <p class="helper" style="margin-top:6px;">Pembayaran ini otomatis tercatat sebagai pemasukan kas (tanpa mempengaruhi Laba Bersih, karena hanya tukar bentuk piutang jadi kas).</p>
       </div>
       <div class="card" style="margin-top:16px;">
         <h3>Riwayat pembayaran piutang</h3>
@@ -460,10 +470,15 @@
         <div class="form-grid">
           <input type="date" id="apPayDate">
           <input type="number" id="apPayAmount" placeholder="Jumlah dibayar (Rp)">
+          <select id="apPayMethod">
+            <option value="cash">Dibayar Cash</option>
+            <option value="transfer">Dibayar Transfer</option>
+          </select>
           <input type="text" id="apPayNotes" placeholder="Catatan (opsional)">
           <button class="primary" id="apPaySaveBtn">Simpan pembayaran</button>
           <button class="ghost" id="apPayCancelBtn">Batal</button>
         </div>
+        <p class="helper" style="margin-top:6px;">Pembayaran ini otomatis tercatat sebagai pengeluaran kas (tanpa mempengaruhi Laba Bersih, karena hanya tukar bentuk kewajiban jadi berkurang).</p>
       </div>
       <div class="card" style="margin-top:16px;">
         <h3>Riwayat pembayaran utang</h3>
@@ -484,9 +499,14 @@
           <input type="date" id="kbDate">
           <input type="text" id="kbName" placeholder="Nama karyawan">
           <input type="number" id="kbAmount" placeholder="Jumlah kasbon (Rp)">
+          <select id="kbMethod">
+            <option value="cash">Diberikan Cash</option>
+            <option value="transfer">Diberikan Transfer</option>
+          </select>
           <input type="text" id="kbNotes" placeholder="Catatan (opsional)">
           <button class="primary" id="addKasbonBtn">Tambah</button>
         </div>
+        <p class="helper" style="margin-top:6px;">Kasbon otomatis tercatat sebagai pengeluaran kas (tanpa mempengaruhi Laba Bersih, karena berupa piutang ke karyawan, bukan beban).</p>
       </div>
       <div class="card" style="margin-top:16px;">
         <h3>Daftar kasbon</h3>
@@ -505,10 +525,15 @@
         <div class="form-grid">
           <input type="date" id="kbPayDate">
           <input type="number" id="kbPayAmount" placeholder="Jumlah dibayar (Rp)">
+          <select id="kbPayMethod">
+            <option value="cash">Diterima Cash</option>
+            <option value="transfer">Diterima Transfer</option>
+          </select>
           <input type="text" id="kbPayNotes" placeholder="Catatan (opsional)">
           <button class="primary" id="kbPaySaveBtn">Simpan pembayaran</button>
           <button class="ghost" id="kbPayCancelBtn">Batal</button>
         </div>
+        <p class="helper" style="margin-top:6px;">Pembayaran ini otomatis tercatat sebagai pemasukan kas (tanpa mempengaruhi Laba Bersih).</p>
       </div>
       <div class="card" style="margin-top:16px;">
         <h3>Riwayat pembayaran kasbon</h3>
@@ -915,6 +940,9 @@ function formatPaymentMethodText(t){
   if(t.payment_method === 'tabungan') return `Tabungan ${t.saving_type||''}`.trim() + (t.bank ? ` (dicairkan Transfer ${t.bank})` : ' (dicairkan Cash)');
   if(t.payment_method === 'service') return 'Service/PSB';
   if(t.payment_method === 'voucher') return 'Voucher';
+  if(t.payment_method === 'piutang') return `Piutang${t.loan_party ? ' - '+t.loan_party : ''}` + (t.bank ? ' (Transfer)' : ' (Cash)');
+  if(t.payment_method === 'hutang') return `Hutang${t.loan_party ? ' - '+t.loan_party : ''}` + (t.bank ? ' (Transfer)' : ' (Cash)');
+  if(t.payment_method === 'kasbon') return 'Kasbon' + (t.bank ? ' (Transfer)' : ' (Cash)');
   return '-';
 }
 function monthKey(dateStr){ return dateStr.slice(0,7); }
@@ -938,7 +966,8 @@ function monthlyAggregates(){
 
 const SAVINGS_AS_EXPENSE_TYPES = ['gaji','profit'];
 const PASSTHROUGH_SAVINGS_TYPES = ['service/psb','voucher']; // tidak pernah menyentuh kas/laba, di kedua arah
-const PASSTHROUGH_PAYMENT_METHODS = ['service','voucher']; // metode pemasukan yang pasangan tabungannya pass-through
+const PASSTHROUGH_PAYMENT_METHODS = ['service','voucher']; // metode yang tidak menyentuh kas ATAU laba
+const BALANCE_SHEET_METHODS = ['piutang','hutang','kasbon']; // menyentuh KAS tapi TIDAK menyentuh laba (cuma tukar bentuk aset/kewajiban)
 const SAVINGS_TYPE_ORDER = ['Bandwidth','Operational','Gaji','Profit'];
 const AUTO_DISTRIBUTION_PERCENT = { Bandwidth: 0.45, Operational: 0.20, Gaji: 0.15, Profit: 0.20 };
 
@@ -947,18 +976,23 @@ function isPassthroughSavingsType(jenis){
 }
 
 function financialTotals(){
-  // Pemasukan Service/PSB & Voucher dikecualikan total dari pendapatan (tidak masuk kas/laba)
-  const totalIncome = data.transactions.filter(t=>t.amount>=0 && !PASSTHROUGH_PAYMENT_METHODS.includes(t.payment_method)).reduce((s,t)=>s+t.amount,0);
+  // --- Dasar untuk KAS: semua transaksi ikut, KECUALI yang benar pass-through (Service/PSB, Voucher) ---
+  const totalIncomeForCash = data.transactions.filter(t=>t.amount>=0 && !PASSTHROUGH_PAYMENT_METHODS.includes(t.payment_method)).reduce((s,t)=>s+t.amount,0);
+  const expenseTxsAll = data.transactions.filter(t=>t.amount<0);
+  const expenseTxs = expenseTxsAll.filter(t => !(t.payment_method === 'tabungan' && isPassthroughSavingsType(t.saving_type)));
+  const totalExpenseTx = Math.abs(expenseTxs.reduce((s,t)=>s+t.amount,0));
+
+  // --- Dasar untuk LABA: dari dasar kas, KECUALI dikurangi lagi transaksi piutang/hutang/kasbon
+  //     (uang boleh keluar/masuk kas, tapi ini cuma tukar bentuk aset/kewajiban, bukan pendapatan/beban riil) ---
+  const balanceSheetIncome = data.transactions.filter(t=>t.amount>=0 && BALANCE_SHEET_METHODS.includes(t.payment_method)).reduce((s,t)=>s+t.amount,0);
+  const balanceSheetExpense = Math.abs(expenseTxs.filter(t=>BALANCE_SHEET_METHODS.includes(t.payment_method)).reduce((s,t)=>s+t.amount,0));
+  const totalIncome = totalIncomeForCash - balanceSheetIncome;
+
   const serviceIncome = data.transactions.filter(t=>t.amount>=0 && t.payment_method === 'service').reduce((s,t)=>s+t.amount,0);
   const voucherIncome = data.transactions.filter(t=>t.amount>=0 && t.payment_method === 'voucher').reduce((s,t)=>s+t.amount,0);
   const today = new Date();
   const currentMonthKey = today.toISOString().slice(0,7);
   const voucherIncomeThisMonth = data.transactions.filter(t=>t.amount>=0 && t.payment_method === 'voucher' && t.date.slice(0,7)===currentMonthKey).reduce((s,t)=>s+t.amount,0);
-
-  const expenseTxsAll = data.transactions.filter(t=>t.amount<0);
-  // Pengeluaran yang didanai tabungan pass-through (Service/PSB, Voucher) juga dikecualikan total (pass-through di kedua arah)
-  const expenseTxs = expenseTxsAll.filter(t => !(t.payment_method === 'tabungan' && isPassthroughSavingsType(t.saving_type)));
-  const totalExpenseTx = Math.abs(expenseTxs.reduce((s,t)=>s+t.amount,0));
 
   // Pool kas berdasarkan metode pembayaran
   const cashIncome = data.transactions.filter(t=>t.amount>=0 && t.payment_method==='cash').reduce((s,t)=>s+t.amount,0);
@@ -988,13 +1022,14 @@ function financialTotals(){
     .filter(t => t.payment_method === 'tabungan' && !SAVINGS_AS_EXPENSE_TYPES.includes((t.saving_type||'').toLowerCase()))
     .reduce((s,t)=>s + Math.abs(t.amount), 0);
 
-  const totalExpenseTxNonTabungan = totalExpenseTx - tabunganExpenseGajiProfit - tabunganExpenseOther;
-  const totalExpense = totalExpenseTx - tabunganExpenseGajiProfit + totalSavingsAsExpense; // dipakai untuk Laba Bersih
+  const totalExpenseTxNonTabungan = totalExpenseTx - tabunganExpenseGajiProfit - tabunganExpenseOther - balanceSheetExpense;
+  const totalExpense = totalExpenseTx - tabunganExpenseGajiProfit - balanceSheetExpense + totalSavingsAsExpense; // dipakai untuk Laba Bersih
   const netProfit = totalIncome - totalExpense;
-  const cashBalance = totalIncome - totalExpenseTx - totalSavings; // semua tabungan (setoran & tarikan) mengurangi/menambah kas
+  const cashBalance = totalIncomeForCash - totalExpenseTx - totalSavings; // semua tabungan (setoran & tarikan) + piutang/hutang/kasbon mengurangi/menambah kas
 
   return {
     totalIncome, totalExpenseTx, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther,
+    balanceSheetIncome, balanceSheetExpense,
     totalSavings, totalServiceFund, serviceIncome, totalVoucherFund, voucherIncome, voucherIncomeThisMonth,
     totalSavingsAsExpense, totalExpense, netProfit, cashBalance,
     cashIncome, cashExpense, netCash, transferIncome, transferExpense, netTransfer
@@ -1125,6 +1160,9 @@ function renderTransactions(){
     else if(t.payment_method === 'tabungan') metode = `<span class="pill pill-amber">Tabungan ${escapeHtml(t.saving_type||'')}</span>` + (t.bank ? ` <span class="pill pill-purple">→ Transfer ${escapeHtml(t.bank)}</span>` : '');
     else if(t.payment_method === 'service') metode = '<span class="pill pill-purple">Service/PSB</span>';
     else if(t.payment_method === 'voucher') metode = '<span class="pill pill-amber">Voucher</span>';
+    else if(t.payment_method === 'piutang') metode = `<span class="pill pill-green">Piutang${t.loan_party?': '+escapeHtml(t.loan_party):''}</span>` + (t.bank ? ` <span class="pill pill-purple">Transfer</span>` : '');
+    else if(t.payment_method === 'hutang') metode = `<span class="pill pill-amber">Hutang${t.loan_party?': '+escapeHtml(t.loan_party):''}</span>` + (t.bank ? ` <span class="pill pill-purple">Transfer</span>` : '');
+    else if(t.payment_method === 'kasbon') metode = '<span class="pill pill-amber">Kasbon</span>' + (t.bank ? ` <span class="pill pill-purple">Transfer</span>` : '');
     if(t.proof_path){ metode += ` <button class="del-btn" style="color:var(--accent);" data-action="viewProof" data-path="${escapeHtml(t.proof_path)}">Lihat bukti</button>`; }
     else if(t.proof_url){ metode += ` <a href="${t.proof_url}" target="_blank" rel="noopener" style="font-size:12px;">Lihat bukti (lama)</a>`; }
     return `
@@ -1142,9 +1180,13 @@ function renderTransactions(){
 }
 
 function renderLaporan(){
-  const { totalIncome, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther, totalSavings, totalServiceFund, serviceIncome, totalVoucherFund, voucherIncome, totalSavingsAsExpense, netProfit, cashBalance } = financialTotals();
+  const { totalIncome, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther, totalSavings, totalServiceFund, serviceIncome, totalVoucherFund, voucherIncome, balanceSheetIncome, balanceSheetExpense, totalSavingsAsExpense, netProfit, cashBalance } = financialTotals();
   const gajiSavingsDeposit = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
   const profitSavingsDeposit = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
+
+  const hutangDiterima = data.transactions.filter(t=>t.amount>=0 && t.payment_method==='hutang').reduce((s,t)=>s+t.amount,0);
+  const piutangDiberikan = Math.abs(data.transactions.filter(t=>t.amount<0 && t.payment_method==='piutang').reduce((s,t)=>s+t.amount,0));
+  const kasbonDiberikan = Math.abs(data.transactions.filter(t=>t.amount<0 && t.payment_method==='kasbon').reduce((s,t)=>s+t.amount,0));
 
   document.getElementById('plTable').innerHTML = `
     <tr><td>Pendapatan penjualan</td><td class="right" style="font-weight:600;">${formatCurrency(totalIncome)}</td></tr>
@@ -1155,20 +1197,34 @@ function renderLaporan(){
     <tr style="background:var(--green-bg);"><td style="font-weight:600;color:var(--green);padding-top:10px;">Laba bersih</td><td class="right" style="font-weight:600;color:var(--green);padding-top:10px;">${formatCurrency(netProfit)}</td></tr>
     <tr><td style="color:var(--muted); font-size:12px; padding-top:8px;">Pemasukan Service/PSB (di luar laporan ini, lihat Tabungan)</td><td class="right" style="color:var(--muted); font-size:12px; padding-top:8px;">${formatCurrency(serviceIncome)}</td></tr>
     <tr><td style="color:var(--muted); font-size:12px;">Pemasukan Voucher (di luar laporan ini, lihat Tabungan)</td><td class="right" style="color:var(--muted); font-size:12px;">${formatCurrency(voucherIncome)}</td></tr>
+    <tr><td style="color:var(--muted); font-size:12px;">Hutang diterima (di luar laporan ini, lihat Piutang & Utang)</td><td class="right" style="color:var(--muted); font-size:12px;">${formatCurrency(hutangDiterima)}</td></tr>
+    <tr><td style="color:var(--muted); font-size:12px;">Piutang diberikan (di luar laporan ini, lihat Piutang & Utang)</td><td class="right" style="color:var(--muted); font-size:12px;">(${formatCurrency(piutangDiberikan)})</td></tr>
+    <tr><td style="color:var(--muted); font-size:12px;">Kasbon diberikan (di luar laporan ini, lihat Kasbon Karyawan)</td><td class="right" style="color:var(--muted); font-size:12px;">(${formatCurrency(kasbonDiberikan)})</td></tr>
   `;
 
   const otherAssets = data.assets.reduce((s,a)=>s+a.amount,0);
-  const grandTotal = cashBalance + totalSavings + totalServiceFund + totalVoucherFund + otherAssets;
+  const totalPiutangOutstanding = data.receivables.reduce((s,r)=> s + (r.amount - paidFor(data.receivablePayments,'receivable_id',r.id)), 0);
+  const totalKasbonOutstanding = data.kasbon.reduce((s,k)=> s + (k.amount - paidFor(data.kasbonPayments,'kasbon_id',k.id)), 0);
+  const totalHutangOutstanding = data.payables.reduce((s,p)=> s + (p.amount - paidFor(data.payablePayments,'payable_id',p.id)), 0);
+
+  const totalAset = cashBalance + totalPiutangOutstanding + totalKasbonOutstanding + totalSavings + totalServiceFund + totalVoucherFund + otherAssets;
+  const totalLiabilitas = totalHutangOutstanding + totalServiceFund + totalVoucherFund;
+  const ekuitas = totalAset - totalLiabilitas;
+
   document.getElementById('balanceTable').innerHTML = `
-    <tr><td style="font-weight:600;">Aset</td><td class="right" style="font-weight:600;">${formatCurrency(grandTotal)}</td></tr>
+    <tr><td style="font-weight:600;">Aset</td><td class="right" style="font-weight:600;">${formatCurrency(totalAset)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2);">Kas & bank</td><td class="right" style="color:var(--text2);">${formatCurrency(cashBalance)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2);">Piutang usaha (sisa belum dibayar)</td><td class="right" style="color:var(--text2);">${formatCurrency(totalPiutangOutstanding)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2);">Kasbon karyawan (sisa belum dibayar)</td><td class="right" style="color:var(--text2);">${formatCurrency(totalKasbonOutstanding)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2);">Tabungan perusahaan</td><td class="right" style="color:var(--text2);">${formatCurrency(totalSavings)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2);">Dana Service/PSB (titipan karyawan)</td><td class="right" style="color:var(--text2);">${formatCurrency(totalServiceFund)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2);">Dana Voucher</td><td class="right" style="color:var(--text2);">${formatCurrency(totalVoucherFund)}</td></tr>
     <tr><td style="padding-left:14px;color:var(--text2);">Aset lainnya</td><td class="right" style="color:var(--text2);">${formatCurrency(otherAssets)}</td></tr>
-    <tr style="border-top:2px solid var(--border);"><td style="font-weight:600;padding-top:10px;">Liabilitas + ekuitas</td><td class="right" style="font-weight:600;padding-top:10px;">${formatCurrency(grandTotal)}</td></tr>
-    <tr><td style="padding-left:14px;color:var(--text2); font-size:12px;">- termasuk kewajiban Service/PSB ke karyawan</td><td class="right" style="color:var(--text2); font-size:12px;">${formatCurrency(totalServiceFund)}</td></tr>
-    <tr><td style="padding-left:14px;color:var(--text2); font-size:12px;">- termasuk dana Voucher</td><td class="right" style="color:var(--text2); font-size:12px;">${formatCurrency(totalVoucherFund)}</td></tr>
+    <tr style="border-top:2px solid var(--border);"><td style="font-weight:600;padding-top:10px;">Liabilitas + ekuitas</td><td class="right" style="font-weight:600;padding-top:10px;">${formatCurrency(totalAset)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2);">Utang usaha (sisa belum dibayar)</td><td class="right" style="color:var(--text2);">${formatCurrency(totalHutangOutstanding)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2);">Kewajiban Service/PSB ke karyawan</td><td class="right" style="color:var(--text2);">${formatCurrency(totalServiceFund)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2);">Kewajiban dana Voucher</td><td class="right" style="color:var(--text2);">${formatCurrency(totalVoucherFund)}</td></tr>
+    <tr><td style="padding-left:14px;color:var(--text2); font-weight:600;">Ekuitas (sisa/modal)</td><td class="right" style="color:var(--text2); font-weight:600;">${formatCurrency(ekuitas)}</td></tr>
   `;
   renderAssets();
 }
@@ -1217,8 +1273,9 @@ function startEditTransaction(tx){
   updatePaymentFieldsVisibility();
 
   document.getElementById('tPaymentMethod').value = tx.payment_method || 'cash';
-  document.getElementById('tTabunganDisbursement').value = (tx.payment_method === 'tabungan' && tx.bank) ? 'transfer' : 'cash';
-  if(tx.payment_method === 'transfer' || (tx.payment_method === 'tabungan' && tx.bank)){
+  const needsDisbursementChoice = ['tabungan','piutang','hutang'].includes(tx.payment_method);
+  document.getElementById('tTabunganDisbursement').value = (needsDisbursementChoice && tx.bank) ? 'transfer' : 'cash';
+  if(tx.payment_method === 'transfer' || (needsDisbursementChoice && tx.bank)){
     const bankPresets = ['BNI','BCA','BPD'];
     if(bankPresets.includes(tx.bank)){ document.getElementById('tBank').value = tx.bank; }
     else { document.getElementById('tBank').value = 'Lainnya'; document.getElementById('tBankCustom').value = tx.bank || ''; }
@@ -1227,6 +1284,9 @@ function startEditTransaction(tx){
     const typePresets = ['Gaji','Profit','Operational','Bandwidth','Service/PSB','Voucher'];
     if(typePresets.includes(tx.saving_type)){ document.getElementById('tSavingType').value = tx.saving_type; }
     else { document.getElementById('tSavingType').value = 'Lainnya'; document.getElementById('tSavingTypeCustom').value = tx.saving_type || ''; }
+  }
+  if(tx.payment_method === 'piutang' || tx.payment_method === 'hutang'){
+    document.getElementById('tLoanPartyName').value = tx.loan_party || '';
   }
   updateMethodFieldsVisibility();
   document.getElementById('tProofExistingNote').style.display = (tx.proof_path || tx.proof_url) ? '' : 'none';
@@ -1252,6 +1312,7 @@ function cancelEditTransaction(){
   document.getElementById('tTabunganDisbursement').value = 'cash';
   document.getElementById('tBankCustom').value = '';
   document.getElementById('tSavingTypeCustom').value = '';
+  document.getElementById('tLoanPartyName').value = '';
   document.getElementById('tProofFile').value = '';
   document.getElementById('tProofExistingNote').style.display = 'none';
   updatePaymentFieldsVisibility();
@@ -1289,18 +1350,21 @@ function openPayForm_(kind, id, name){
     document.getElementById('arPayDate').value = today;
     document.getElementById('arPayAmount').value = '';
     document.getElementById('arPayNotes').value = '';
+    document.getElementById('arPayMethod').value = 'cash';
   } else if(kind === 'ap'){
     document.getElementById('apPayFormCard').style.display = '';
     document.getElementById('apPayFormName').textContent = name;
     document.getElementById('apPayDate').value = today;
     document.getElementById('apPayAmount').value = '';
     document.getElementById('apPayNotes').value = '';
+    document.getElementById('apPayMethod').value = 'cash';
   } else if(kind === 'kb'){
     document.getElementById('kbPayFormCard').style.display = '';
     document.getElementById('kbPayFormName').textContent = name;
     document.getElementById('kbPayDate').value = today;
     document.getElementById('kbPayAmount').value = '';
     document.getElementById('kbPayNotes').value = '';
+    document.getElementById('kbPayMethod').value = 'cash';
   }
 }
 
@@ -1662,6 +1726,29 @@ function renderAll(){
 
 function exportExcel(){
   const wb = XLSX.utils.book_new();
+  const { totalIncome, totalExpenseTx, totalSavings, totalServiceFund, totalVoucherFund, netProfit, cashBalance } = financialTotals();
+  const otherAssetsTotal = data.assets.reduce((s,a)=>s+a.amount,0);
+  const totalPiutangOutstanding = data.receivables.reduce((s,r)=> s + (r.amount - paidFor(data.receivablePayments,'receivable_id',r.id)), 0);
+  const totalKasbonOutstanding = data.kasbon.reduce((s,k)=> s + (k.amount - paidFor(data.kasbonPayments,'kasbon_id',k.id)), 0);
+  const totalHutangOutstanding = data.payables.reduce((s,p)=> s + (p.amount - paidFor(data.payablePayments,'payable_id',p.id)), 0);
+  const totalAsetXls = cashBalance + totalPiutangOutstanding + totalKasbonOutstanding + totalSavings + totalServiceFund + totalVoucherFund + otherAssetsTotal;
+  const ekuitasXls = totalAsetXls - totalHutangOutstanding - totalServiceFund - totalVoucherFund;
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
+    { Pos: 'Laba Bersih', 'Jumlah (Rp)': netProfit },
+    { Pos: '--- ASET ---', 'Jumlah (Rp)': totalAsetXls },
+    { Pos: 'Kas & bank', 'Jumlah (Rp)': cashBalance },
+    { Pos: 'Piutang usaha (sisa)', 'Jumlah (Rp)': totalPiutangOutstanding },
+    { Pos: 'Kasbon karyawan (sisa)', 'Jumlah (Rp)': totalKasbonOutstanding },
+    { Pos: 'Tabungan perusahaan', 'Jumlah (Rp)': totalSavings },
+    { Pos: 'Dana Service/PSB', 'Jumlah (Rp)': totalServiceFund },
+    { Pos: 'Dana Voucher', 'Jumlah (Rp)': totalVoucherFund },
+    { Pos: 'Aset lainnya', 'Jumlah (Rp)': otherAssetsTotal },
+    { Pos: '--- LIABILITAS + EKUITAS ---', 'Jumlah (Rp)': totalAsetXls },
+    { Pos: 'Utang usaha (sisa)', 'Jumlah (Rp)': totalHutangOutstanding },
+    { Pos: 'Kewajiban Service/PSB', 'Jumlah (Rp)': totalServiceFund },
+    { Pos: 'Kewajiban dana Voucher', 'Jumlah (Rp)': totalVoucherFund },
+    { Pos: 'Ekuitas (sisa/modal)', 'Jumlah (Rp)': ekuitasXls }
+  ]), 'Neraca');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.transactions.map(t => ({ Tanggal: t.date, Deskripsi: t.description, Kategori: t.category || '', Tipe: t.amount>=0 ? 'Pendapatan' : 'Pengeluaran', 'Jumlah (Rp)': t.amount, Metode: formatPaymentMethodText(t), 'Bukti transfer': (t.proof_path || t.proof_url) ? 'Ada (buka di aplikasi)' : '-', 'Dicatat oleh': t.created_by || '' }))), 'Transaksi');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.receivables.map(r => ({ Tanggal:r.date||'', Pelanggan:r.name, 'Pinjaman (Rp)':r.amount, 'Terbayar (Rp)':paidFor(data.receivablePayments,'receivable_id',r.id), 'Sisa (Rp)':r.amount-paidFor(data.receivablePayments,'receivable_id',r.id), Catatan:r.notes||'' }))), 'Piutang');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.receivablePayments.map(p => { const rec=data.receivables.find(r=>r.id===p.receivable_id); return { Tanggal:p.date, Pelanggan:rec?rec.name:'', 'Jumlah (Rp)':p.amount, Catatan:p.notes||'', 'Dicatat oleh':p.created_by||'' }; })), 'Pembayaran Piutang');
@@ -1673,6 +1760,16 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.payroll.map(p => ({ Bulan:payrollMonthLabel(p.month), Karyawan:p.employee_name, 'Gaji pokok (Rp)':p.base_salary, 'Bonus (Rp)':p.bonus, 'Total (Rp)':p.base_salary+p.bonus, Catatan:p.notes||'' }))), 'Gaji & Bonus');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.savings.map(x => ({ Tanggal:x.date, Jenis:x.jenis, 'Jumlah (Rp)':x.amount, 'Dihitung sebagai pengeluaran':SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase())?'Ya':'Tidak', Catatan:x.notes||'' }))), 'Tabungan');
   const agg = monthlyAggregates();
+  const gajiSavingsXls = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
+  const profitSavingsXls = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
+    { Keterangan: 'Pendapatan penjualan', 'Jumlah (Rp)': totalIncome },
+    { Keterangan: 'Biaya operasional (cash/transfer)', 'Jumlah (Rp)': -financialTotals().totalExpenseTxNonTabungan },
+    { Keterangan: 'Pengeluaran dari tabungan operational/bandwidth', 'Jumlah (Rp)': -financialTotals().tabunganExpenseOther },
+    { Keterangan: 'Tabungan gaji (sebagai pengeluaran saat disetor)', 'Jumlah (Rp)': -gajiSavingsXls },
+    { Keterangan: 'Tabungan profit (sebagai pengeluaran saat disetor)', 'Jumlah (Rp)': -profitSavingsXls },
+    { Keterangan: 'Laba bersih', 'Jumlah (Rp)': netProfit }
+  ]), 'Laba Rugi');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.assets.map(a => ({ Tanggal:a.date, 'Nama aset':a.name, 'Nilai (Rp)':a.amount, Catatan:a.notes||'', 'Dicatat oleh':a.created_by||'' }))), 'Aset Lainnya');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(agg.map(a => ({ Bulan:a.label, 'Pendapatan (Rp)':a.income, 'Pengeluaran (Rp)':a.expense, 'Laba (Rp)':a.profit }))), 'Ringkasan Bulanan');
   XLSX.writeFile(wb, `laporan-keuangan-${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -1681,9 +1778,15 @@ function exportExcel(){
 function exportPdf(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
-  const { totalIncome, totalExpenseTx, totalSavings, totalServiceFund, netProfit, cashBalance } = financialTotals();
+  const { totalIncome, totalExpenseTx, totalSavings, totalServiceFund, totalVoucherFund, netProfit, cashBalance } = financialTotals();
   const gajiSavings = data.savings.filter(x=>(x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
   const profitSavings = data.savings.filter(x=>(x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
+  const otherAssetsTotal = data.assets.reduce((s,a)=>s+a.amount,0);
+  const totalPiutangOutstanding = data.receivables.reduce((s,r)=> s + (r.amount - paidFor(data.receivablePayments,'receivable_id',r.id)), 0);
+  const totalKasbonOutstanding = data.kasbon.reduce((s,k)=> s + (k.amount - paidFor(data.kasbonPayments,'kasbon_id',k.id)), 0);
+  const totalHutangOutstanding = data.payables.reduce((s,p)=> s + (p.amount - paidFor(data.payablePayments,'payable_id',p.id)), 0);
+  const totalAsetPdf = cashBalance + totalPiutangOutstanding + totalKasbonOutstanding + totalSavings + totalServiceFund + totalVoucherFund + otherAssetsTotal;
+  const ekuitasPdf = totalAsetPdf - totalHutangOutstanding - totalServiceFund - totalVoucherFund;
   const dateStr = new Date().toLocaleDateString('id-ID', {year:'numeric', month:'long', day:'numeric'});
   doc.setFontSize(16); doc.text('Laporan Keuangan Perusahaan', 14, 18);
   doc.setFontSize(10); doc.setTextColor(100); doc.text('Dicetak pada ' + dateStr, 14, 25);
@@ -1697,6 +1800,24 @@ function exportPdf(){
     ['Tabungan gaji (sebagai pengeluaran)', '(' + formatCurrency(gajiSavings) + ')'],
     ['Tabungan profit (sebagai pengeluaran)', '(' + formatCurrency(profitSavings) + ')'],
     ['Laba bersih', formatCurrency(netProfit)]
+  ], theme: 'grid', headStyles: {fillColor: [42,120,214]} });
+  y = doc.lastAutoTable.finalY + 12;
+  if(y > 220){ doc.addPage(); y = 18; }
+  doc.text('Neraca', 14, y);
+  doc.autoTable({ startY: y+4, head: [['Pos', 'Jumlah']], body: [
+    ['Aset', formatCurrency(totalAsetPdf)],
+    ['  Kas & bank', formatCurrency(cashBalance)],
+    ['  Piutang usaha (sisa)', formatCurrency(totalPiutangOutstanding)],
+    ['  Kasbon karyawan (sisa)', formatCurrency(totalKasbonOutstanding)],
+    ['  Tabungan perusahaan', formatCurrency(totalSavings)],
+    ['  Dana Service/PSB', formatCurrency(totalServiceFund)],
+    ['  Dana Voucher', formatCurrency(totalVoucherFund)],
+    ['  Aset lainnya', formatCurrency(otherAssetsTotal)],
+    ['Liabilitas + Ekuitas', formatCurrency(totalAsetPdf)],
+    ['  Utang usaha (sisa)', formatCurrency(totalHutangOutstanding)],
+    ['  Kewajiban Service/PSB', formatCurrency(totalServiceFund)],
+    ['  Kewajiban dana Voucher', formatCurrency(totalVoucherFund)],
+    ['  Ekuitas (sisa/modal)', formatCurrency(ekuitasPdf)]
   ], theme: 'grid', headStyles: {fillColor: [42,120,214]} });
   y = doc.lastAutoTable.finalY + 12;
   doc.text('Piutang usaha', 14, y);
@@ -1745,9 +1866,11 @@ function updatePaymentFieldsVisibility(){
   document.getElementById('tPaymentTabunganOpt').style.display = isIncome ? 'none' : '';
   document.getElementById('tPaymentServiceOpt').style.display = isIncome ? '' : 'none';
   document.getElementById('tPaymentVoucherOpt').style.display = isIncome ? '' : 'none';
+  document.getElementById('tPaymentPiutangOpt').style.display = isIncome ? 'none' : '';
+  document.getElementById('tPaymentHutangOpt').style.display = isIncome ? '' : 'none';
   const methodSelect = document.getElementById('tPaymentMethod');
-  if(isIncome && methodSelect.value === 'tabungan'){ methodSelect.value = 'cash'; }
-  if(!isIncome && (methodSelect.value === 'service' || methodSelect.value === 'voucher')){ methodSelect.value = 'cash'; }
+  if(isIncome && (methodSelect.value === 'tabungan' || methodSelect.value === 'piutang')){ methodSelect.value = 'cash'; }
+  if(!isIncome && (methodSelect.value === 'service' || methodSelect.value === 'voucher' || methodSelect.value === 'hutang')){ methodSelect.value = 'cash'; }
   updateMethodFieldsVisibility();
 }
 function updateMethodFieldsVisibility(){
@@ -1755,19 +1878,26 @@ function updateMethodFieldsVisibility(){
   const isTabungan = method === 'tabungan';
   const isService = method === 'service';
   const isVoucher = method === 'voucher';
+  const isPiutang = method === 'piutang';
+  const isHutang = method === 'hutang';
+  const needsDisbursementChoice = isTabungan || isPiutang || isHutang;
   const disbursement = document.getElementById('tTabunganDisbursement').value;
-  // Transfer terlihat kalau metode langsung Transfer, ATAU Tabungan yang dicairkan via Transfer
-  const isTransfer = method === 'transfer' || (isTabungan && disbursement === 'transfer');
+  // Transfer terlihat kalau metode langsung Transfer, ATAU Tabungan/Piutang/Hutang yang dicairkan/dibayar via Transfer
+  const isTransfer = method === 'transfer' || (needsDisbursementChoice && disbursement === 'transfer');
 
-  document.getElementById('tTabunganDisbursement').style.display = isTabungan ? '' : 'none';
+  document.getElementById('tTabunganDisbursement').style.display = needsDisbursementChoice ? '' : 'none';
   document.getElementById('tBank').style.display = isTransfer ? '' : 'none';
   document.getElementById('tBankCustom').style.display = (isTransfer && document.getElementById('tBank').value === 'Lainnya') ? '' : 'none';
   document.getElementById('tProofWrap').style.display = isTransfer ? '' : 'none';
   document.getElementById('tSavingType').style.display = isTabungan ? '' : 'none';
   document.getElementById('tSavingTypeCustom').style.display = (isTabungan && document.getElementById('tSavingType').value === 'Lainnya') ? '' : 'none';
+  document.getElementById('tLoanPartyName').style.display = (isPiutang || isHutang) ? '' : 'none';
+  document.getElementById('tLoanPartyName').placeholder = isPiutang ? 'Nama peminjam (yang berhutang ke kita)' : 'Nama pemberi pinjaman';
   document.getElementById('tTabunganHelper').style.display = isTabungan ? '' : 'none';
   document.getElementById('tServiceHelper').style.display = isService ? '' : 'none';
   document.getElementById('tVoucherHelper').style.display = isVoucher ? '' : 'none';
+  document.getElementById('tPiutangHelper').style.display = isPiutang ? '' : 'none';
+  document.getElementById('tHutangHelper').style.display = isHutang ? '' : 'none';
 }
 document.getElementById('tType').addEventListener('change', updatePaymentFieldsVisibility);
 document.getElementById('tPaymentMethod').addEventListener('change', updateMethodFieldsVisibility);
@@ -1818,7 +1948,7 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
   const amount = type === 'income' ? amountRaw : -amountRaw;
 
   const paymentMethod = document.getElementById('tPaymentMethod').value;
-  let bank = null, proofPath = null, savingType = null;
+  let bank = null, proofPath = null, savingType = null, loanParty = null;
   const btn = document.getElementById('addTransBtn');
   const statusEl = document.getElementById('tProofStatus');
   statusEl.textContent = '';
@@ -1826,8 +1956,11 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
   const existingTx = isEditing ? data.transactions.find(t=>t.id===editingTransactionId) : null;
 
   const isTabungan = paymentMethod === 'tabungan' && type === 'expense';
-  const tabunganDisbursement = document.getElementById('tTabunganDisbursement').value; // 'cash' | 'transfer'
-  const effectiveTransfer = paymentMethod === 'transfer' || (isTabungan && tabunganDisbursement === 'transfer');
+  const isPiutang = paymentMethod === 'piutang' && type === 'expense';
+  const isHutang = paymentMethod === 'hutang' && type === 'income';
+  const needsDisbursementChoice = isTabungan || isPiutang || isHutang;
+  const disbursement = document.getElementById('tTabunganDisbursement').value; // 'cash' | 'transfer'
+  const effectiveTransfer = paymentMethod === 'transfer' || (needsDisbursementChoice && disbursement === 'transfer');
 
   if(isTabungan){
     const typeSelect = document.getElementById('tSavingType').value;
@@ -1840,6 +1973,11 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
     if(currentBalance < amountRaw){
       if(!confirm(`Saldo tabungan ${savingType} saat ini hanya ${formatCurrency(currentBalance)}, kurang dari ${formatCurrency(amountRaw)}. Tetap lanjutkan?`)) return;
     }
+  }
+
+  if(isPiutang || isHutang){
+    loanParty = document.getElementById('tLoanPartyName').value.trim();
+    if(!loanParty){ alert(isPiutang ? 'Mohon isi nama peminjam.' : 'Mohon isi nama pemberi pinjaman.'); return; }
   }
 
   if(effectiveTransfer){
@@ -1874,20 +2012,34 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
     }
     return null;
   }
+  // Entri piutang/utang otomatis yang mengikuti transaksi ini
+  function buildLinkedLoanRow(txId){
+    if(isPiutang){
+      return { table: 'receivables', row: { date, name: loanParty, amount: amountRaw, notes: `Otomatis dari transaksi: ${desc}`, status: 'lancar', related_transaction_id: txId } };
+    } else if(isHutang){
+      return { table: 'payables', row: { date, name: loanParty, amount: amountRaw, notes: `Otomatis dari transaksi: ${desc}`, status: 'lancar', related_transaction_id: txId } };
+    }
+    return null;
+  }
 
   if(isEditing){
     const txId = editingTransactionId;
     const { error } = await sb.from('transactions').update({
       date, description: desc, amount, category,
       payment_method: paymentMethod, bank, proof_path: proofPath,
-      saving_type: paymentMethod === 'tabungan' ? savingType : null
+      saving_type: paymentMethod === 'tabungan' ? savingType : null,
+      loan_party: (isPiutang || isHutang) ? loanParty : null
     }).eq('id', txId);
     if(error){ btn.disabled = false; statusEl.textContent = ''; alert('Gagal menyimpan perubahan: ' + error.message); return; }
 
-    // Hapus link tabungan lama (kalau ada), lalu buat ulang sesuai nilai baru
+    // Hapus link tabungan & piutang/utang lama (kalau ada), lalu buat ulang sesuai nilai baru
     await sb.from('savings').delete().eq('related_transaction_id', txId);
+    await sb.from('receivables').delete().eq('related_transaction_id', txId);
+    await sb.from('payables').delete().eq('related_transaction_id', txId);
     const linkedRow = buildLinkedSavingsRow(txId);
     if(linkedRow){ await sb.from('savings').insert(linkedRow); }
+    const linkedLoan = buildLinkedLoanRow(txId);
+    if(linkedLoan){ await sb.from(linkedLoan.table).insert(linkedLoan.row); }
 
     btn.disabled = false; statusEl.textContent = '';
     cancelEditTransaction();
@@ -1899,7 +2051,8 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
   const { data: inserted, error } = await sb.from('transactions').insert({
     date, description: desc, amount, category, created_by: currentUsername,
     payment_method: paymentMethod, bank, proof_path: proofPath,
-    saving_type: paymentMethod === 'tabungan' ? savingType : null
+    saving_type: paymentMethod === 'tabungan' ? savingType : null,
+    loan_party: (isPiutang || isHutang) ? loanParty : null
   }).select();
   if(error){ btn.disabled = false; statusEl.textContent = ''; alert('Gagal menyimpan: ' + error.message); return; }
 
@@ -1909,6 +2062,11 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
     const { error: svError } = await sb.from('savings').insert(linkedRow);
     if(svError){ alert('Transaksi tersimpan, tapi gagal mencatat ke tabungan terkait: ' + svError.message); }
   }
+  const linkedLoan = buildLinkedLoanRow(txId);
+  if(linkedLoan){
+    const { error: loanError } = await sb.from(linkedLoan.table).insert(linkedLoan.row);
+    if(loanError){ alert(`Transaksi tersimpan, tapi gagal mencatat ke ${linkedLoan.table === 'receivables' ? 'Piutang' : 'Utang'}: ` + loanError.message); }
+  }
 
   btn.disabled = false; statusEl.textContent = '';
   document.getElementById('tDate').value = ''; document.getElementById('tDesc').value = '';
@@ -1916,6 +2074,7 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
   document.getElementById('tProofFile').value = ''; document.getElementById('tBankCustom').value = '';
   document.getElementById('tSavingTypeCustom').value = '';
   document.getElementById('tTabunganDisbursement').value = 'cash';
+  document.getElementById('tLoanPartyName').value = '';
   document.getElementById('tDate').value = new Date().toISOString().slice(0,10);
   flashSaved(); await loadAllData(); renderAll();
   logActivity('create', 'transactions', `${type==='income'?'Pendapatan':'Pengeluaran'} ${formatCurrency(Math.abs(amount))} - ${desc}`);
@@ -1953,13 +2112,23 @@ document.getElementById('addKasbonBtn').addEventListener('click', async ()=>{
   const date = document.getElementById('kbDate').value || new Date().toISOString().slice(0,10);
   const employee_name = document.getElementById('kbName').value.trim();
   const amount = parseFloat(document.getElementById('kbAmount').value);
+  const method = document.getElementById('kbMethod').value; // 'cash' | 'transfer'
   const notes = document.getElementById('kbNotes').value.trim();
   if(!employee_name || isNaN(amount) || amount<=0){ alert('Mohon lengkapi nama karyawan dan jumlah.'); return; }
-  const { error } = await sb.from('kasbon').insert({ date, employee_name, amount, notes, created_by: currentUsername });
+  const { data: inserted, error } = await sb.from('kasbon').insert({ date, employee_name, amount, notes, created_by: currentUsername }).select();
   if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  const kasbonId = inserted && inserted[0] ? inserted[0].id : null;
+  const { data: txInserted, error: txError } = await sb.from('transactions').insert({
+    date, description: `Kasbon karyawan - ${employee_name}`, amount: -amount, category: 'Kasbon',
+    payment_method: 'kasbon', bank: method==='transfer' ? 'Transfer' : null, created_by: currentUsername
+  }).select();
+  if(txError){ alert('Kasbon tersimpan, tapi gagal mencatat ke kas: ' + txError.message); }
+  else if(kasbonId && txInserted && txInserted[0]){
+    await sb.from('kasbon').update({ related_transaction_id: txInserted[0].id }).eq('id', kasbonId);
+  }
   document.getElementById('kbDate').value=''; document.getElementById('kbName').value='';
-  document.getElementById('kbAmount').value=''; document.getElementById('kbNotes').value='';
-  flashSaved(); await loadAllData(); renderKasbon();
+  document.getElementById('kbAmount').value=''; document.getElementById('kbNotes').value=''; document.getElementById('kbMethod').value='cash';
+  flashSaved(); await loadAllData(); renderKasbon(); renderDashboard();
   logActivity('create', 'kasbon', `Kasbon ${employee_name} ${formatCurrency(amount)}`);
 });
 
@@ -1972,12 +2141,21 @@ document.getElementById('arPaySaveBtn').addEventListener('click', async ()=>{
   if(!openPayForm || openPayForm.kind !== 'ar') return;
   const date = document.getElementById('arPayDate').value;
   const amount = parseFloat(document.getElementById('arPayAmount').value);
+  const method = document.getElementById('arPayMethod').value;
   const notes = document.getElementById('arPayNotes').value.trim();
   if(!date || isNaN(amount) || amount<=0){ alert('Mohon isi tanggal dan jumlah yang valid.'); return; }
-  const { error } = await sb.from('receivable_payments').insert({ receivable_id: openPayForm.id, date, amount, notes, created_by: currentUsername });
-  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  const { data: txInserted, error: txError } = await sb.from('transactions').insert({
+    date, description: `Pembayaran piutang - ${openPayForm.name}`, amount: amount, category: 'Piutang',
+    payment_method: 'piutang', bank: method==='transfer' ? 'Transfer' : null, created_by: currentUsername
+  }).select();
+  if(txError){ alert('Gagal mencatat ke kas: ' + txError.message); return; }
+  const { error } = await sb.from('receivable_payments').insert({
+    receivable_id: openPayForm.id, date, amount, notes, created_by: currentUsername,
+    related_transaction_id: txInserted && txInserted[0] ? txInserted[0].id : null
+  });
+  if(error){ alert('Kas tercatat, tapi gagal menyimpan riwayat pembayaran piutang: ' + error.message); }
   closeAllPayForms();
-  flashSaved(); await loadAllData(); renderReceivables();
+  flashSaved(); await loadAllData(); renderReceivables(); renderDashboard();
   logActivity('create', 'receivables', `Pembayaran piutang ${openPayForm.name} ${formatCurrency(amount)}`);
 });
 
@@ -1985,12 +2163,21 @@ document.getElementById('apPaySaveBtn').addEventListener('click', async ()=>{
   if(!openPayForm || openPayForm.kind !== 'ap') return;
   const date = document.getElementById('apPayDate').value;
   const amount = parseFloat(document.getElementById('apPayAmount').value);
+  const method = document.getElementById('apPayMethod').value;
   const notes = document.getElementById('apPayNotes').value.trim();
   if(!date || isNaN(amount) || amount<=0){ alert('Mohon isi tanggal dan jumlah yang valid.'); return; }
-  const { error } = await sb.from('payable_payments').insert({ payable_id: openPayForm.id, date, amount, notes, created_by: currentUsername });
-  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  const { data: txInserted, error: txError } = await sb.from('transactions').insert({
+    date, description: `Pembayaran utang - ${openPayForm.name}`, amount: -amount, category: 'Utang',
+    payment_method: 'hutang', bank: method==='transfer' ? 'Transfer' : null, created_by: currentUsername
+  }).select();
+  if(txError){ alert('Gagal mencatat ke kas: ' + txError.message); return; }
+  const { error } = await sb.from('payable_payments').insert({
+    payable_id: openPayForm.id, date, amount, notes, created_by: currentUsername,
+    related_transaction_id: txInserted && txInserted[0] ? txInserted[0].id : null
+  });
+  if(error){ alert('Kas tercatat, tapi gagal menyimpan riwayat pembayaran utang: ' + error.message); }
   closeAllPayForms();
-  flashSaved(); await loadAllData(); renderPayables();
+  flashSaved(); await loadAllData(); renderPayables(); renderDashboard();
   logActivity('create', 'payables', `Pembayaran utang ${openPayForm.name} ${formatCurrency(amount)}`);
 });
 
@@ -1998,12 +2185,21 @@ document.getElementById('kbPaySaveBtn').addEventListener('click', async ()=>{
   if(!openPayForm || openPayForm.kind !== 'kb') return;
   const date = document.getElementById('kbPayDate').value;
   const amount = parseFloat(document.getElementById('kbPayAmount').value);
+  const method = document.getElementById('kbPayMethod').value;
   const notes = document.getElementById('kbPayNotes').value.trim();
   if(!date || isNaN(amount) || amount<=0){ alert('Mohon isi tanggal dan jumlah yang valid.'); return; }
-  const { error } = await sb.from('kasbon_payments').insert({ kasbon_id: openPayForm.id, date, amount, notes, created_by: currentUsername });
-  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  const { data: txInserted, error: txError } = await sb.from('transactions').insert({
+    date, description: `Pembayaran kasbon - ${openPayForm.name}`, amount: amount, category: 'Kasbon',
+    payment_method: 'kasbon', bank: method==='transfer' ? 'Transfer' : null, created_by: currentUsername
+  }).select();
+  if(txError){ alert('Gagal mencatat ke kas: ' + txError.message); return; }
+  const { error } = await sb.from('kasbon_payments').insert({
+    kasbon_id: openPayForm.id, date, amount, notes, created_by: currentUsername,
+    related_transaction_id: txInserted && txInserted[0] ? txInserted[0].id : null
+  });
+  if(error){ alert('Kas tercatat, tapi gagal menyimpan riwayat pembayaran kasbon: ' + error.message); }
   closeAllPayForms();
-  flashSaved(); await loadAllData(); renderKasbon();
+  flashSaved(); await loadAllData(); renderKasbon(); renderDashboard();
   logActivity('create', 'kasbon', `Pembayaran kasbon ${openPayForm.name} ${formatCurrency(amount)}`);
 });
 
@@ -2143,6 +2339,8 @@ document.body.addEventListener('click', async (e)=>{
     const txId = parseInt(btn.dataset.id,10);
     const txRecord = data.transactions.find(t=>t.id===txId);
     await sb.from('savings').delete().eq('related_transaction_id', txId);
+    await sb.from('receivables').delete().eq('related_transaction_id', txId);
+    await sb.from('payables').delete().eq('related_transaction_id', txId);
     const { error } = await sb.from('transactions').delete().eq('id', txId);
     if(!error){
       await loadAllData(); renderAll();
@@ -2157,30 +2355,39 @@ document.body.addEventListener('click', async (e)=>{
   } else if(action === 'delAR'){
     const id = parseInt(btn.dataset.id,10);
     const rec = data.receivables.find(r=>r.id===id);
+    if(rec && rec.related_transaction_id){ await sb.from('transactions').delete().eq('id', rec.related_transaction_id); }
     const { error } = await sb.from('receivables').delete().eq('id', id);
-    if(!error){ await loadAllData(); renderReceivables(); logActivity('delete', 'receivables', rec ? `${rec.name} ${formatCurrency(rec.amount)}` : `id ${id}`); }
+    if(!error){ await loadAllData(); renderReceivables(); renderDashboard(); logActivity('delete', 'receivables', rec ? `${rec.name} ${formatCurrency(rec.amount)}` : `id ${id}`); }
   } else if(action === 'delAP'){
     const id = parseInt(btn.dataset.id,10);
     const rec = data.payables.find(p=>p.id===id);
+    if(rec && rec.related_transaction_id){ await sb.from('transactions').delete().eq('id', rec.related_transaction_id); }
     const { error } = await sb.from('payables').delete().eq('id', id);
-    if(!error){ await loadAllData(); renderPayables(); logActivity('delete', 'payables', rec ? `${rec.name} ${formatCurrency(rec.amount)}` : `id ${id}`); }
+    if(!error){ await loadAllData(); renderPayables(); renderDashboard(); logActivity('delete', 'payables', rec ? `${rec.name} ${formatCurrency(rec.amount)}` : `id ${id}`); }
   } else if(action === 'delARPayment'){
     const id = parseInt(btn.dataset.id,10);
+    const rec = data.receivablePayments.find(p=>p.id===id);
+    if(rec && rec.related_transaction_id){ await sb.from('transactions').delete().eq('id', rec.related_transaction_id); }
     const { error } = await sb.from('receivable_payments').delete().eq('id', id);
-    if(!error){ await loadAllData(); renderReceivables(); logActivity('delete', 'receivables', `Pembayaran piutang dihapus (id ${id})`); }
+    if(!error){ await loadAllData(); renderReceivables(); renderDashboard(); logActivity('delete', 'receivables', `Pembayaran piutang dihapus (id ${id})`); }
   } else if(action === 'delAPPayment'){
     const id = parseInt(btn.dataset.id,10);
+    const rec = data.payablePayments.find(p=>p.id===id);
+    if(rec && rec.related_transaction_id){ await sb.from('transactions').delete().eq('id', rec.related_transaction_id); }
     const { error } = await sb.from('payable_payments').delete().eq('id', id);
-    if(!error){ await loadAllData(); renderPayables(); logActivity('delete', 'payables', `Pembayaran utang dihapus (id ${id})`); }
+    if(!error){ await loadAllData(); renderPayables(); renderDashboard(); logActivity('delete', 'payables', `Pembayaran utang dihapus (id ${id})`); }
   } else if(action === 'delKasbon'){
     const id = parseInt(btn.dataset.id,10);
     const rec = data.kasbon.find(k=>k.id===id);
+    if(rec && rec.related_transaction_id){ await sb.from('transactions').delete().eq('id', rec.related_transaction_id); }
     const { error } = await sb.from('kasbon').delete().eq('id', id);
-    if(!error){ await loadAllData(); renderKasbon(); logActivity('delete', 'kasbon', rec ? `${rec.employee_name} ${formatCurrency(rec.amount)}` : `id ${id}`); }
+    if(!error){ await loadAllData(); renderKasbon(); renderDashboard(); logActivity('delete', 'kasbon', rec ? `${rec.employee_name} ${formatCurrency(rec.amount)}` : `id ${id}`); }
   } else if(action === 'delKasbonPayment'){
     const id = parseInt(btn.dataset.id,10);
+    const rec = data.kasbonPayments.find(p=>p.id===id);
+    if(rec && rec.related_transaction_id){ await sb.from('transactions').delete().eq('id', rec.related_transaction_id); }
     const { error } = await sb.from('kasbon_payments').delete().eq('id', id);
-    if(!error){ await loadAllData(); renderKasbon(); logActivity('delete', 'kasbon', `Pembayaran kasbon dihapus (id ${id})`); }
+    if(!error){ await loadAllData(); renderKasbon(); renderDashboard(); logActivity('delete', 'kasbon', `Pembayaran kasbon dihapus (id ${id})`); }
   } else if(action === 'delAsset'){
     const id = parseInt(btn.dataset.id,10);
     const rec = data.assets.find(a=>a.id===id);
