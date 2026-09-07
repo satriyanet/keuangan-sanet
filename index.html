@@ -297,8 +297,13 @@
         <p class="helper" style="margin-top:0;">Dihitung dari Pemasukan cash dikurangi Pengeluaran cash, lalu dibagi otomatis: Bandwidth 45%, Operational 20%, Gaji 15%, Profit 20%. Jumlah per jenis bisa diedit manual sebelum disimpan (misal untuk pembulatan setoran).</p>
         <div class="grid grid-4" id="distribusiSummary"></div>
         <div class="form-grid" style="margin-top:12px;">
+          <div>
+            <label class="helper" style="display:block; margin-bottom:4px;">Tanggal setor (sesuai buku tabungan)</label>
+            <input type="date" id="distribusiDate">
+          </div>
           <input type="number" id="distribusiAmount" placeholder="Jumlah untuk didistribusikan (Rp)">
         </div>
+        <p class="helper" style="margin-top:4px;">Kalau tempat menabung libur di akhir pekan/tanggal merah, uang tetap terkumpul otomatis di "Belum didistribusikan" — tidak akan hilang. Setor & klik "Distribusikan" di hari kerja berikutnya, lalu isi tanggal setor sesuai yang tertulis di buku tabungan supaya catatan di sini cocok persis.</p>
         <div class="grid grid-4" id="distribusiEditRow" style="margin-top:10px;"></div>
         <div class="flex-between" style="margin-top:10px;">
           <span class="helper" id="distribusiTotalCheck"></span>
@@ -1762,6 +1767,9 @@ function renderDistribusi(){
   const amountInput = document.getElementById('distribusiAmount');
   if(document.activeElement !== amountInput){ amountInput.value = belumDistribusi > 0 ? Math.round(belumDistribusi) : ''; }
 
+  const dateInput = document.getElementById('distribusiDate');
+  if(!dateInput.value){ dateInput.value = new Date().toISOString().slice(0,10); }
+
   // Buat input per jenis kalau belum ada, sekali saja
   const editRow = document.getElementById('distribusiEditRow');
   if(editRow.children.length === 0){
@@ -2011,19 +2019,20 @@ document.getElementById('distribusiBtn').addEventListener('click', async ()=>{
     sumFields += val;
   }
   if(sumFields <= 0){ alert('Mohon isi jumlah yang valid untuk didistribusikan.'); return; }
+  const setorDate = document.getElementById('distribusiDate').value || new Date().toISOString().slice(0,10);
   const btn = document.getElementById('distribusiBtn');
   btn.disabled = true; btn.textContent = 'Memproses...';
-  const today = new Date().toISOString().slice(0,10);
   try{
     const rows = SAVINGS_TYPE_ORDER.filter(t => amounts[t] !== 0).map(t => ({
-      date: today, jenis: t, amount: amounts[t],
+      date: setorDate, jenis: t, amount: amounts[t],
       notes: 'Distribusi otomatis dari kas cash', source: 'auto_distribution', created_by: currentUsername
     }));
     const { error } = await sb.from('savings').insert(rows);
     if(error) throw error;
     distribusiUserEdited = false;
+    document.getElementById('distribusiDate').value = '';
     flashSaved(); await loadAllData(); renderSavings(); renderDashboard(); renderLaporan();
-    logActivity('create', 'savings', `Distribusi manual/otomatis ${formatCurrency(sumFields)} ke tabungan (${SAVINGS_TYPE_ORDER.map(t=>t+': '+formatCurrency(amounts[t])).join(', ')})`);
+    logActivity('create', 'savings', `Distribusi manual/otomatis ${formatCurrency(sumFields)} ke tabungan tgl ${setorDate} (${SAVINGS_TYPE_ORDER.map(t=>t+': '+formatCurrency(amounts[t])).join(', ')})`);
   }catch(e){
     alert('Gagal mendistribusikan: ' + (e.message || e));
   }finally{
