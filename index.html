@@ -305,12 +305,32 @@
         </div>
         <p class="helper" style="margin-top:4px;">Kalau tempat menabung libur di akhir pekan/tanggal merah, uang tetap terkumpul otomatis di "Belum didistribusikan" — tidak akan hilang. Setor & klik "Distribusikan" di hari kerja berikutnya, lalu isi tanggal setor sesuai yang tertulis di buku tabungan supaya catatan di sini cocok persis.</p>
         <div class="grid grid-4" id="distribusiEditRow" style="margin-top:10px;"></div>
+        <p class="helper" id="distribusiHolidayWarning" style="display:none; color:var(--red); font-weight:600;"></p>
         <div class="flex-between" style="margin-top:10px;">
           <span class="helper" id="distribusiTotalCheck"></span>
-          <div style="display:flex; gap:8px;">
+          <div style="display:flex; gap:8px; align-items:center;">
+            <label class="helper owner-only" id="distribusiOverrideWrap" style="display:none; margin:0;">
+              <input type="checkbox" id="distribusiOverride" style="margin-right:4px;">Tetap izinkan (Owner)
+            </label>
             <button class="ghost" id="distribusiResetBtn">Reset ke hitungan otomatis</button>
             <button class="primary" id="distribusiBtn">Distribusikan sekarang</button>
           </div>
+        </div>
+      </div>
+
+      <div class="card owner-only" id="holidayManageCard" style="margin-top:16px;">
+        <h3>Kelola hari libur (nonaktifkan tombol Distribusi otomatis)</h3>
+        <p class="helper" style="margin-top:0;">Tombol "Distribusikan sekarang" otomatis nonaktif tiap Sabtu/Minggu. Tambahkan tanggal merah/cuti bersama di sini supaya ikut dinonaktifkan juga (khusus Accounting — Owner tetap bisa override).</p>
+        <div class="form-grid">
+          <input type="date" id="holidayDate">
+          <input type="text" id="holidayName" placeholder="Nama libur (mis. Idulfitri)">
+          <button class="primary" id="addHolidayBtn">Tambah hari libur</button>
+        </div>
+        <div style="overflow-x:auto; margin-top:10px; max-height:240px; overflow-y:auto;">
+          <table>
+            <thead><tr><th>Tanggal</th><th>Nama</th><th></th></tr></thead>
+            <tbody id="holidayTable"></tbody>
+          </table>
         </div>
       </div>
 
@@ -748,7 +768,7 @@ const SESSION_KEY = 'finance_app_session_v1';
 let currentRole = null;
 let currentUsername = null;
 let dataLoaded = false;
-let data = { transactions: [], receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [] };
+let data = { transactions: [], receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [] };
 
 // ---------- Login ----------
 document.getElementById('loginBtn').addEventListener('click', handleLogin);
@@ -884,7 +904,7 @@ function setSyncStatus(ok){
 
 async function loadAllData(){
   try{
-    const [t, r, p, b, pr, sv, arp, app_, kb, kbp, ast] = await Promise.all([
+    const [t, r, p, b, pr, sv, arp, app_, kb, kbp, ast, hol] = await Promise.all([
       sb.from('transactions').select('*').order('date', {ascending:false}),
       sb.from('receivables').select('*').order('id'),
       sb.from('payables').select('*').order('id'),
@@ -895,7 +915,8 @@ async function loadAllData(){
       sb.from('payable_payments').select('*').order('date', {ascending:false}),
       sb.from('kasbon').select('*').order('date', {ascending:false}),
       sb.from('kasbon_payments').select('*').order('date', {ascending:false}),
-      sb.from('assets').select('*').order('date', {ascending:false})
+      sb.from('assets').select('*').order('date', {ascending:false}),
+      sb.from('holidays').select('*').order('date', {ascending:true})
     ]);
     if(t.error) throw t.error;
     data.transactions = t.data.map(x => ({...x, amount: Number(x.amount)}));
@@ -909,6 +930,7 @@ async function loadAllData(){
     data.kasbon = (kb.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.kasbonPayments = (kbp.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.assets = (ast.data||[]).map(x => ({...x, amount: Number(x.amount)}));
+    data.holidays = hol.data || [];
     setSyncStatus(true);
   }catch(e){
     console.error('Gagal memuat data:', e);
@@ -935,7 +957,7 @@ function scheduleRealtimeReload(){
 
 function subscribeRealtime(){
   if(realtimeChannel) return;
-  const tables = ['transactions','receivables','payables','receivable_payments','payable_payments','kasbon','kasbon_payments','budgets','payroll','savings','assets'];
+  const tables = ['transactions','receivables','payables','receivable_payments','payable_payments','kasbon','kasbon_payments','budgets','payroll','savings','assets','holidays'];
   realtimeChannel = sb.channel('finance-app-changes');
   tables.forEach(t => {
     realtimeChannel.on('postgres_changes', {event:'*', schema:'public', table:t}, scheduleRealtimeReload);
@@ -1628,7 +1650,7 @@ async function logActivity(action, tableName, description){
 
 const AUDIT_TABLE_LABELS = {
   transactions: 'Transaksi', savings: 'Tabungan', payroll: 'Gaji & bonus', budgets: 'Anggaran',
-  receivables: 'Piutang', payables: 'Utang', kasbon: 'Kasbon', assets: 'Aset', app_users: 'Pengguna', auth: 'Login', company_settings: 'Pengaturan'
+  receivables: 'Piutang', payables: 'Utang', kasbon: 'Kasbon', assets: 'Aset', holidays: 'Hari Libur', app_users: 'Pengguna', auth: 'Login', company_settings: 'Pengaturan'
 };
 const AUDIT_ACTION_LABELS = { create: 'Tambah', delete: 'Hapus', login: 'Login', update: 'Ubah' };
 
@@ -1753,6 +1775,54 @@ function renderSavings(){
 
 let distribusiUserEdited = false; // true kalau admin sudah mengubah salah satu input manual
 
+function isDateNonWorkingDay(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  const dayOfWeek = d.getDay(); // 0 = Minggu, 6 = Sabtu
+  if(dayOfWeek === 0 || dayOfWeek === 6) return { blocked:true, reason: dayOfWeek === 0 ? 'Hari Minggu' : 'Hari Sabtu' };
+  const holiday = data.holidays.find(h => h.date === dateStr);
+  if(holiday) return { blocked:true, reason: holiday.name || 'Hari libur nasional' };
+  return { blocked:false, reason:null };
+}
+
+function updateDistribusiHolidayLock(){
+  const dateInput = document.getElementById('distribusiDate');
+  const todayStr = dateInput.value || new Date().toISOString().slice(0,10);
+  const check = isDateNonWorkingDay(todayStr);
+  const warnEl = document.getElementById('distribusiHolidayWarning');
+  const overrideWrap = document.getElementById('distribusiOverrideWrap');
+  const overrideBox = document.getElementById('distribusiOverride');
+  const btn = document.getElementById('distribusiBtn');
+
+  if(check.blocked){
+    warnEl.style.display = '';
+    warnEl.textContent = `Tanggal setor jatuh pada ${check.reason} — tempat menabung kemungkinan libur, tombol dinonaktifkan agar tidak salah catat.`;
+    if(currentRole === 'owner'){
+      overrideWrap.style.display = '';
+      btn.disabled = !overrideBox.checked;
+    } else {
+      overrideWrap.style.display = 'none';
+      btn.disabled = true;
+    }
+  } else {
+    warnEl.style.display = 'none';
+    overrideWrap.style.display = 'none';
+    overrideBox.checked = false;
+    btn.disabled = false;
+  }
+}
+document.getElementById('distribusiDate').addEventListener('change', updateDistribusiHolidayLock);
+document.getElementById('distribusiOverride').addEventListener('change', updateDistribusiHolidayLock);
+
+async function renderHolidays(){
+  if(currentRole !== 'owner') return;
+  const sorted = [...data.holidays].sort((a,b)=> a.date.localeCompare(b.date));
+  const tbody = document.getElementById('holidayTable');
+  tbody.innerHTML = sorted.length ? sorted.map(h => `
+    <tr><td>${h.date}</td><td>${escapeHtml(h.name||'-')}</td>
+    <td class="right"><button class="del-btn" data-id="${h.id}" data-action="delHoliday">Hapus</button></td></tr>
+  `).join('') : '<tr><td colspan="3" class="empty">Belum ada hari libur ditambahkan</td></tr>';
+}
+
 function renderDistribusi(){
   const { netCash } = financialTotals();
   const alreadyDistributed = autoDistributedTotal();
@@ -1769,6 +1839,8 @@ function renderDistribusi(){
 
   const dateInput = document.getElementById('distribusiDate');
   if(!dateInput.value){ dateInput.value = new Date().toISOString().slice(0,10); }
+  updateDistribusiHolidayLock();
+  renderHolidays();
 
   // Buat input per jenis kalau belum ada, sekali saja
   const editRow = document.getElementById('distribusiEditRow');
@@ -1821,6 +1893,17 @@ document.getElementById('distribusiResetBtn').addEventListener('click', ()=>{
   distribusiUserEdited = false;
   recalcDistribusiFromPercent();
   updateDistribusiTotalCheck();
+});
+
+document.getElementById('addHolidayBtn').addEventListener('click', async ()=>{
+  const date = document.getElementById('holidayDate').value;
+  const name = document.getElementById('holidayName').value.trim();
+  if(!date){ alert('Mohon pilih tanggal.'); return; }
+  const { error } = await sb.from('holidays').insert({ date, name, created_by: currentUsername });
+  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  document.getElementById('holidayDate').value = ''; document.getElementById('holidayName').value = '';
+  flashSaved(); await loadAllData(); renderHolidays(); updateDistribusiHolidayLock();
+  logActivity('create', 'holidays', `Hari libur ${date}${name?' - '+name:''}`);
 });
 
 function renderAll(){
@@ -2011,6 +2094,13 @@ document.getElementById('tSavingType').addEventListener('change', updateMethodFi
 updatePaymentFieldsVisibility();
 
 document.getElementById('distribusiBtn').addEventListener('click', async ()=>{
+  const setorDateCheck = document.getElementById('distribusiDate').value || new Date().toISOString().slice(0,10);
+  const holidayCheck = isDateNonWorkingDay(setorDateCheck);
+  const overrideChecked = document.getElementById('distribusiOverride').checked;
+  if(holidayCheck.blocked && !(currentRole === 'owner' && overrideChecked)){
+    alert(`Tanggal ini (${holidayCheck.reason}) dinonaktifkan untuk distribusi tabungan.`);
+    return;
+  }
   const amounts = {};
   let sumFields = 0;
   for(const t of SAVINGS_TYPE_ORDER){
@@ -2036,7 +2126,8 @@ document.getElementById('distribusiBtn').addEventListener('click', async ()=>{
   }catch(e){
     alert('Gagal mendistribusikan: ' + (e.message || e));
   }finally{
-    btn.disabled = false; btn.textContent = 'Distribusikan sekarang';
+    btn.textContent = 'Distribusikan sekarang';
+    updateDistribusiHolidayLock();
   }
 });
 
@@ -2505,6 +2596,11 @@ document.body.addEventListener('click', async (e)=>{
     const rec = data.assets.find(a=>a.id===id);
     const { error } = await sb.from('assets').delete().eq('id', id);
     if(!error){ await loadAllData(); renderLaporan(); logActivity('delete', 'assets', rec ? `${rec.name} ${formatCurrency(rec.amount)}` : `id ${id}`); }
+  } else if(action === 'delHoliday'){
+    const id = parseInt(btn.dataset.id,10);
+    const rec = data.holidays.find(h=>h.id===id);
+    const { error } = await sb.from('holidays').delete().eq('id', id);
+    if(!error){ await loadAllData(); renderHolidays(); updateDistribusiHolidayLock(); logActivity('delete', 'holidays', rec ? `${rec.date} - ${rec.name||''}` : `id ${id}`); }
   } else if(action === 'delBudget'){
     const id = parseInt(btn.dataset.id,10);
     const rec = data.budgets.find(b=>b.id===id);
