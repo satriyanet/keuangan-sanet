@@ -168,6 +168,7 @@
     <button class="tab" data-view="laporan">Laporan</button>
     <button class="tab" data-view="piutang">Piutang & Utang</button>
     <button class="tab" data-view="anggaran">Anggaran</button>
+    <button class="tab" data-view="akuntansi">Akuntansi</button>
     <button class="tab owner-only" data-view="proyeksi">Proyeksi Kas</button>
     <button class="tab owner-only" data-view="perbandingan">Perbandingan</button>
     <button class="tab owner-only" data-view="pengguna">Pengguna</button>
@@ -400,11 +401,12 @@
 
     <div class="card" style="margin-top:16px;">
       <h3>Catatan aset lainnya</h3>
-      <p class="helper" style="margin-top:0;">Contoh: peralatan, kendaraan, atau aset tetap lainnya milik perusahaan. Setiap penambahan otomatis menambah total "Aset lainnya" di Neraca. Untuk mencatat aset yang dijual/dihapus, isi jumlah dengan angka negatif.</p>
+      <p class="helper" style="margin-top:0;">Contoh: peralatan, kendaraan, atau aset tetap lainnya milik perusahaan. Setiap penambahan otomatis menambah total "Aset lainnya" di Neraca. Untuk aset yang dijual/dihapus, pilih "Kurangi aset" (nominal tetap diisi angka positif).</p>
       <div class="form-grid">
         <input type="date" id="assetDate">
         <input type="text" id="assetName" placeholder="Nama aset (mis. Laptop kantor)">
-        <input type="number" id="assetAmount" placeholder="Nilai (Rp, boleh negatif)">
+        <select id="assetDir"><option value="add">Tambah aset</option><option value="sub">Kurangi aset (dijual/dihapus)</option></select>
+        <input type="number" id="assetAmount" placeholder="Nilai (Rp)" min="0">
         <input type="text" id="assetNotes" placeholder="Catatan (opsional)">
         <button class="primary" id="addAssetBtn">Tambah</button>
       </div>
@@ -663,6 +665,250 @@
     </div>
   </div>
 
+  <div class="view" id="view-akuntansi">
+    <div class="subtabs" id="akuntansiSubtabs" style="flex-wrap:wrap;">
+      <button class="subtab active" data-subview="ak-laporan">Laporan Keuangan</button>
+      <button class="subtab" data-subview="ak-jurnal">Jurnal</button>
+      <button class="subtab" data-subview="ak-bukubesar">Buku Besar</button>
+      <button class="subtab" data-subview="ak-coa">Daftar Akun (COA)</button>
+      <button class="subtab" data-subview="ak-faktur">Faktur</button>
+      <button class="subtab" data-subview="ak-bank">Rekonsiliasi Bank</button>
+      <button class="subtab" data-subview="ak-validasi">Cek Konsistensi</button>
+    </div>
+
+    <!-- LAPORAN -->
+    <div class="subview active" id="subview-ak-laporan">
+      <div class="card">
+        <div class="flex-between">
+          <h3 style="margin:0;">Laporan keuangan dari buku besar</h3>
+          <div class="export-row">
+            <button class="ghost" id="akExportXlsBtn">Export Excel</button>
+            <button class="ghost" id="akExportPdfBtn">Export PDF</button>
+          </div>
+        </div>
+        <div class="form-grid" style="margin-top:12px;">
+          <div><label class="helper">Dari tanggal</label><input type="date" id="akFrom"></div>
+          <div><label class="helper">Sampai tanggal</label><input type="date" id="akTo"></div>
+          <div style="display:flex; gap:6px; align-items:flex-end;">
+            <button class="ghost" id="akThisMonthBtn">Bulan ini</button>
+            <button class="ghost" id="akAllBtn">Semua</button>
+          </div>
+        </div>
+        <p class="helper">Laba Rugi &amp; Arus Kas = aktivitas dalam periode. Neraca = posisi per tanggal "Sampai". Disusun mengikuti prinsip akuntansi akrual dan persamaan Aset = Kewajiban + Ekuitas (format mengacu SAK EMKM).</p>
+      </div>
+      <div class="grid grid-2" style="margin-top:16px;">
+        <div class="card"><h3>Laporan Laba Rugi</h3><div id="akLabaRugi"></div></div>
+        <div class="card"><h3>Neraca (Laporan Posisi Keuangan)</h3><div id="akNeraca"></div></div>
+      </div>
+      <div class="card" style="margin-top:16px;"><h3>Laporan Arus Kas (metode langsung)</h3><div id="akArusKas"></div></div>
+      <div class="card" style="margin-top:16px;"><h3>Neraca Saldo (Trial Balance)</h3><div id="akTrialBalance"></div></div>
+    </div>
+
+    <!-- JURNAL -->
+    <div class="subview" id="subview-ak-jurnal">
+      <div class="card">
+        <h3>Jurnal manual (penyesuaian)</h3>
+        <div class="form-grid">
+          <input type="date" id="akJDate">
+          <input type="text" id="akJRef" placeholder="No. bukti (opsional)">
+          <input type="text" id="akJDesc" placeholder="Keterangan jurnal">
+        </div>
+        <table>
+          <thead><tr><th style="width:38%">Akun</th><th class="right">Debit</th><th class="right">Kredit</th><th>Memo</th><th></th></tr></thead>
+          <tbody id="akJLines"></tbody>
+          <tfoot><tr><td><b>Total</b></td><td class="right" id="akJTotD"></td><td class="right" id="akJTotK"></td><td colspan="2" id="akJBalanceMsg"></td></tr></tfoot>
+        </table>
+        <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+          <button class="ghost" id="akJAddLineBtn">+ Tambah baris</button>
+          <button class="primary" id="akJPostBtn">Posting jurnal</button>
+        </div>
+        <p class="helper">Debit dan kredit harus sama (balance) dan tidak boleh minus. Satu baris hanya boleh diisi di salah satu sisi.</p>
+        <div class="login-error" id="akJError" style="margin-top:10px;"></div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <div class="flex-between">
+          <h3 style="margin:0;">Daftar jurnal</h3>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <select id="akJFilterSource" style="width:auto;">
+              <option value="">Semua sumber</option>
+              <option value="auto">Otomatis (transaksi, tabungan, aset)</option>
+              <option value="faktur">Faktur</option>
+              <option value="manual">Manual</option>
+            </select>
+            <input type="text" id="akJSearch" placeholder="Cari keterangan / akun" style="width:200px;">
+          </div>
+        </div>
+        <div style="overflow-x:auto; margin-top:10px;">
+          <table>
+            <thead><tr><th>Tanggal</th><th>Bukti</th><th>Keterangan</th><th>Akun</th><th class="right">Debit</th><th class="right">Kredit</th><th></th></tr></thead>
+            <tbody id="akJournalTable"></tbody>
+          </table>
+        </div>
+        <div class="flex-between" style="margin-top:10px;">
+          <span class="helper" id="akJPageInfo"></span>
+          <div style="display:flex; gap:6px;"><button class="ghost" id="akJPrev">‹</button><button class="ghost" id="akJNext">›</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUKU BESAR -->
+    <div class="subview" id="subview-ak-bukubesar">
+      <div class="card">
+        <div class="form-grid">
+          <select id="akLedgerAccount"></select>
+          <input type="date" id="akLedgerFrom">
+          <input type="date" id="akLedgerTo">
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Tanggal</th><th>Bukti</th><th>Keterangan</th><th class="right">Debit</th><th class="right">Kredit</th><th class="right">Saldo</th></tr></thead>
+            <tbody id="akLedgerTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- COA -->
+    <div class="subview" id="subview-ak-coa">
+      <div class="card">
+        <h3>Tambah akun</h3>
+        <div class="form-grid">
+          <input type="text" id="akCoaCode" placeholder="Kode (mis. 6-1600)">
+          <input type="text" id="akCoaName" placeholder="Nama akun">
+          <select id="akCoaType">
+            <option value="aset">Aset</option><option value="kewajiban">Kewajiban</option><option value="ekuitas">Modal / Ekuitas</option>
+            <option value="pendapatan">Pendapatan</option><option value="beban">Beban</option>
+          </select>
+          <button class="primary" id="akCoaAddBtn">Tambah akun</button>
+        </div>
+        <p class="helper">Penomoran: 1 = Aset, 2 = Kewajiban, 3 = Modal, 4 = Pendapatan, 5-6 = Beban. Kode harus diawali angka sesuai jenis akun.</p>
+        <div class="login-error" id="akCoaError"></div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <h3>Daftar akun &amp; saldo</h3>
+        <table>
+          <thead><tr><th>Kode</th><th>Nama</th><th>Jenis</th><th class="right">Saldo</th><th></th></tr></thead>
+          <tbody id="akCoaTable"></tbody>
+        </table>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <h3>Pemetaan kategori transaksi ke akun</h3>
+        <p class="helper" style="margin-top:0;">Jurnal otomatis memilih akun pendapatan/beban dari kata kunci pada kategori atau keterangan transaksi. Jika tidak ada yang cocok: pendapatan masuk 4-1000, beban masuk 6-1900.</p>
+        <div class="form-grid">
+          <input type="text" id="akMapKeyword" placeholder="Kata kunci (mis. sewa)">
+          <select id="akMapAccount"></select>
+          <button class="primary" id="akMapAddBtn">Tambah pemetaan</button>
+        </div>
+        <table>
+          <thead><tr><th>Kata kunci</th><th>Akun</th><th></th></tr></thead>
+          <tbody id="akMapTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- FAKTUR -->
+    <div class="subview" id="subview-ak-faktur">
+      <div class="card">
+        <h3>Faktur baru</h3>
+        <div class="form-grid">
+          <select id="akInvType">
+            <option value="penjualan">Faktur penjualan (piutang pelanggan)</option>
+            <option value="pembelian">Faktur pembelian (utang supplier)</option>
+          </select>
+          <input type="text" id="akInvNumber" placeholder="No. faktur">
+          <input type="text" id="akInvParty" placeholder="Nama pelanggan / supplier">
+          <input type="date" id="akInvDate">
+          <input type="date" id="akInvDue" title="Jatuh tempo">
+          <input type="number" id="akInvAmount" placeholder="Nominal (Rp)" min="0">
+          <select id="akInvAccount"></select>
+          <input type="text" id="akInvNotes" placeholder="Catatan (opsional)">
+          <button class="primary" id="akInvAddBtn">Simpan faktur</button>
+        </div>
+        <p class="helper">Faktur penjualan: Piutang Usaha bertambah &amp; Pendapatan diakui. Faktur pembelian: Beban diakui &amp; Utang Usaha bertambah. Pembayaran dicatat di tabel di bawah. Ini terpisah dari tab "Piutang &amp; Utang" (pinjaman uang).</p>
+        <div class="login-error" id="akInvError"></div>
+      </div>
+      <div class="grid grid-3" style="margin-top:16px;" id="akInvSummary"></div>
+      <div class="card" style="margin-top:16px;">
+        <div class="flex-between"><h3 style="margin:0;">Daftar faktur</h3>
+          <select id="akInvFilter" style="width:auto;">
+            <option value="">Semua</option><option value="open">Belum lunas</option><option value="overdue">Jatuh tempo</option><option value="paid">Lunas</option>
+          </select></div>
+        <div style="overflow-x:auto; margin-top:10px;">
+        <table>
+          <thead><tr><th>No.</th><th>Jenis</th><th>Pihak</th><th>Tanggal</th><th>Jatuh tempo</th><th class="right">Nominal</th><th class="right">Terbayar</th><th class="right">Sisa</th><th>Status</th><th></th></tr></thead>
+          <tbody id="akInvTable"></tbody>
+        </table></div>
+      </div>
+      <div class="card" id="akInvPayCard" style="margin-top:16px; display:none;">
+        <h3 id="akInvPayTitle">Catat pembayaran</h3>
+        <div class="form-grid">
+          <input type="date" id="akPayDate">
+          <input type="number" id="akPayAmount" placeholder="Nominal (Rp)" min="0">
+          <select id="akPayMethod"><option value="cash">Cash</option><option value="transfer">Transfer</option></select>
+          <select id="akPayBank"><option value="BNI">BNI</option><option value="BCA">BCA</option><option value="BPD">BPD</option><option value="Lainnya">Bank lainnya</option></select>
+          <input type="text" id="akPayNotes" placeholder="Catatan">
+        </div>
+        <div style="display:flex; gap:8px;"><button class="primary" id="akPaySaveBtn">Simpan pembayaran</button><button class="ghost" id="akPayCancelBtn">Batal</button></div>
+        <div class="login-error" id="akPayError" style="margin-top:10px;"></div>
+        <div id="akPayHistory" style="margin-top:12px;"></div>
+      </div>
+    </div>
+
+    <!-- REKONSILIASI BANK -->
+    <div class="subview" id="subview-ak-bank">
+      <div class="card">
+        <h3>Rekening koran</h3>
+        <div class="form-grid">
+          <select id="akBankSel"><option value="BNI">BNI</option><option value="BCA">BCA</option><option value="BPD">BPD</option><option value="Lainnya">Bank lainnya</option></select>
+          <input type="date" id="akBsDate">
+          <input type="text" id="akBsDesc" placeholder="Keterangan di rekening koran">
+          <select id="akBsDir"><option value="masuk">Uang masuk (kredit di koran)</option><option value="keluar">Uang keluar (debet di koran)</option></select>
+          <input type="number" id="akBsAmount" placeholder="Nominal (Rp)" min="0">
+          <button class="primary" id="akBsAddBtn">Tambah baris</button>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:6px;">
+          <label class="ghost" style="cursor:pointer; padding:8px 14px; border:1px solid var(--border-strong); border-radius:8px; font-size:13px;">
+            Impor dari Excel/CSV <input type="file" id="akBsFile" accept=".xlsx,.xls,.csv" style="display:none;">
+          </label>
+          <span class="helper" style="margin:0;">Kolom: <b>Tanggal</b>, <b>Keterangan</b>, <b>Masuk</b>, <b>Keluar</b>. Bank mengikuti pilihan di atas.</span>
+        </div>
+        <div class="login-error" id="akBsError" style="margin-top:10px;"></div>
+      </div>
+      <div class="grid grid-4" style="margin-top:16px;" id="akRecSummary"></div>
+      <div class="card" style="margin-top:16px;">
+        <div class="flex-between"><h3 style="margin:0;">Pencocokan</h3>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <select id="akRecBankFilter" style="width:auto;"><option value="">Semua bank</option><option>BNI</option><option>BCA</option><option>BPD</option><option>Lainnya</option></select>
+            <select id="akRecStatusFilter" style="width:auto;"><option value="">Semua</option><option value="unmatched">Belum cocok</option><option value="matched">Sudah cocok</option></select>
+            <button class="ghost" id="akAutoMatchBtn">Cocokkan otomatis</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto; margin-top:10px;">
+        <table>
+          <thead><tr><th>Bank</th><th>Tanggal</th><th>Keterangan</th><th>Arah</th><th class="right">Nominal</th><th>Dicocokkan dengan</th><th></th></tr></thead>
+          <tbody id="akBsTable"></tbody>
+        </table></div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <h3>Catatan internal (transfer) yang belum ada di rekening koran</h3>
+        <div style="overflow-x:auto;"><table>
+          <thead><tr><th>Tanggal</th><th>Bank</th><th>Keterangan</th><th>Arah</th><th class="right">Nominal</th></tr></thead>
+          <tbody id="akUnmatchedInternal"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- VALIDASI -->
+    <div class="subview" id="subview-ak-validasi">
+      <div class="card">
+        <h3>Cek konsistensi buku besar</h3>
+        <p class="helper" style="margin-top:0;">Membandingkan angka dari buku besar (jurnal) dengan perhitungan yang dipakai Dashboard dan Laporan lama. Semua harus hijau.</p>
+        <table><thead><tr><th>Pemeriksaan</th><th class="right">Buku besar</th><th class="right">Aplikasi</th><th>Status</th></tr></thead>
+        <tbody id="akCheckTable"></tbody></table>
+      </div>
+    </div>
+  </div>
+
   <div class="view" id="view-proyeksi">
     <div class="card">
       <div class="flex-between">
@@ -731,6 +977,11 @@
             <option value="kasbon">Kasbon</option>
             <option value="app_users">Pengguna</option>
             <option value="assets">Aset</option>
+            <option value="journal_entries">Jurnal</option>
+            <option value="invoices">Faktur</option>
+            <option value="invoice_payments">Pembayaran Faktur</option>
+            <option value="bank_statement_lines">Rekening Koran</option>
+            <option value="coa_accounts">Akun COA</option>
             <option value="company_settings">Pengaturan</option>
             <option value="auth">Login</option>
           </select>
@@ -768,7 +1019,7 @@ const SESSION_KEY = 'finance_app_session_v1';
 let currentRole = null;
 let currentUsername = null;
 let dataLoaded = false;
-let data = { transactions: [], receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [] };
+let data = { transactions: [], receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [], coa: [], journalEntries: [], journalLines: [], invoices: [], invoicePayments: [], bankLines: [], categoryMap: [] };
 
 // ---------- Login ----------
 document.getElementById('loginBtn').addEventListener('click', handleLogin);
@@ -841,8 +1092,8 @@ function stopInactivityTimer(){
   document.addEventListener(evt, resetInactivityTimer, {passive:true});
 });
 
-const OWNER_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','proyeksi','perbandingan','pengguna','log'];
-const ACCOUNTING_TABS = ['dashboard','transaksi','laporan','piutang','anggaran'];
+const OWNER_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','akuntansi','proyeksi','perbandingan','pengguna','log'];
+const ACCOUNTING_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','akuntansi'];
 
 function applyRoleUI(){
   const badge = document.getElementById('roleBadge');
@@ -904,7 +1155,7 @@ function setSyncStatus(ok){
 
 async function loadAllData(){
   try{
-    const [t, r, p, b, pr, sv, arp, app_, kb, kbp, ast, hol] = await Promise.all([
+    const [t, r, p, b, pr, sv, arp, app_, kb, kbp, ast, hol, coa, je, jl, inv, invp, bsl, cmap] = await Promise.all([
       sb.from('transactions').select('*').order('date', {ascending:false}),
       sb.from('receivables').select('*').order('id'),
       sb.from('payables').select('*').order('id'),
@@ -916,7 +1167,14 @@ async function loadAllData(){
       sb.from('kasbon').select('*').order('date', {ascending:false}),
       sb.from('kasbon_payments').select('*').order('date', {ascending:false}),
       sb.from('assets').select('*').order('date', {ascending:false}),
-      sb.from('holidays').select('*').order('date', {ascending:true})
+      sb.from('holidays').select('*').order('date', {ascending:true}),
+      sb.from('coa_accounts').select('*').order('code'),
+      sb.from('journal_entries').select('*').order('date', {ascending:false}),
+      sb.from('journal_lines').select('*'),
+      sb.from('invoices').select('*').order('date', {ascending:false}),
+      sb.from('invoice_payments').select('*').order('date', {ascending:false}),
+      sb.from('bank_statement_lines').select('*').order('date', {ascending:false}),
+      sb.from('category_map').select('*').order('keyword')
     ]);
     if(t.error) throw t.error;
     data.transactions = t.data.map(x => ({...x, amount: Number(x.amount)}));
@@ -931,6 +1189,15 @@ async function loadAllData(){
     data.kasbonPayments = (kbp.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.assets = (ast.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.holidays = hol.data || [];
+    // Modul akuntansi: kalau migration-akuntansi.sql belum dijalankan, tabelnya belum ada -> modul tampil kosong + petunjuk
+    data.akReady = !coa.error;
+    data.coa = coa.error ? [] : (coa.data||[]);
+    data.journalEntries = je.error ? [] : (je.data||[]);
+    data.journalLines = jl.error ? [] : (jl.data||[]).map(x => ({...x, debit: Number(x.debit), credit: Number(x.credit)}));
+    data.invoices = inv.error ? [] : (inv.data||[]).map(x => ({...x, amount: Number(x.amount)}));
+    data.invoicePayments = invp.error ? [] : (invp.data||[]).map(x => ({...x, amount: Number(x.amount)}));
+    data.bankLines = bsl.error ? [] : (bsl.data||[]).map(x => ({...x, amount: Number(x.amount)}));
+    data.categoryMap = cmap.error ? [] : (cmap.data||[]);
     setSyncStatus(true);
   }catch(e){
     console.error('Gagal memuat data:', e);
@@ -958,6 +1225,7 @@ function scheduleRealtimeReload(){
 function subscribeRealtime(){
   if(realtimeChannel) return;
   const tables = ['transactions','receivables','payables','receivable_payments','payable_payments','kasbon','kasbon_payments','budgets','payroll','savings','assets','holidays'];
+  if(data.akReady) tables.push('coa_accounts','journal_entries','journal_lines','invoices','invoice_payments','bank_statement_lines','category_map');
   realtimeChannel = sb.channel('finance-app-changes');
   tables.forEach(t => {
     realtimeChannel.on('postgres_changes', {event:'*', schema:'public', table:t}, scheduleRealtimeReload);
@@ -1650,7 +1918,7 @@ async function logActivity(action, tableName, description){
 
 const AUDIT_TABLE_LABELS = {
   transactions: 'Transaksi', savings: 'Tabungan', payroll: 'Gaji & bonus', budgets: 'Anggaran',
-  receivables: 'Piutang', payables: 'Utang', kasbon: 'Kasbon', assets: 'Aset', holidays: 'Hari Libur', app_users: 'Pengguna', auth: 'Login', company_settings: 'Pengaturan'
+  receivables: 'Piutang', payables: 'Utang', kasbon: 'Kasbon', assets: 'Aset', holidays: 'Hari Libur', journal_entries: 'Jurnal', invoices: 'Faktur', invoice_payments: 'Pembayaran Faktur', bank_statement_lines: 'Rekening Koran', coa_accounts: 'Akun COA', category_map: 'Pemetaan Kategori', app_users: 'Pengguna', auth: 'Login', company_settings: 'Pengaturan'
 };
 const AUDIT_ACTION_LABELS = { create: 'Tambah', delete: 'Hapus', login: 'Login', update: 'Ubah' };
 
@@ -1907,7 +2175,7 @@ document.getElementById('addHolidayBtn').addEventListener('click', async ()=>{
 });
 
 function renderAll(){
-  renderDashboard(); renderTransactions(); renderLaporan(); renderReceivables(); renderPayables(); renderKasbon(); renderRekomendasiPelunasan(); renderBudgets(); renderPayroll(); renderSavings(); renderProjection();
+  renderDashboard(); renderTransactions(); renderLaporan(); renderReceivables(); renderPayables(); renderKasbon(); renderRekomendasiPelunasan(); renderBudgets(); renderPayroll(); renderSavings(); renderProjection(); renderAkuntansi();
   if(currentRole === 'owner'){ renderComparison(); renderUsers(); }
 }
 
@@ -2474,9 +2742,10 @@ document.getElementById('projMonths').addEventListener('input', renderProjection
 document.getElementById('addAssetBtn').addEventListener('click', async ()=>{
   const date = document.getElementById('assetDate').value || new Date().toISOString().slice(0,10);
   const name = document.getElementById('assetName').value.trim();
-  const amount = parseFloat(document.getElementById('assetAmount').value);
+  let amount = parseFloat(document.getElementById('assetAmount').value);
   const notes = document.getElementById('assetNotes').value.trim();
-  if(!name || isNaN(amount) || amount === 0){ alert('Mohon lengkapi nama aset dan nilai (tidak boleh 0).'); return; }
+  if(!name || isNaN(amount) || amount <= 0){ alert('Mohon lengkapi nama aset dan nilai yang lebih dari 0 (tanpa tanda minus).'); return; }
+  if(document.getElementById('assetDir').value === 'sub') amount = -amount; // disimpan negatif secara internal agar kompatibel dengan data lama
   const btn = document.getElementById('addAssetBtn');
   btn.disabled = true;
   try{
@@ -2627,6 +2896,852 @@ document.body.addEventListener('click', async (e)=>{
     }catch(e){ alert(e.message || 'Gagal menghapus akun.'); }
   }
 });
+
+// ==== AKUNTANSI ENGINE START ====
+// Mesin pembukuan berpasangan (double-entry). Jurnal untuk Transaksi/Tabungan/Aset/Piutang/Utang/Kasbon
+// DIBENTUK ULANG dari data yang ada setiap kali dibuka (tidak disimpan ganda) sehingga selalu sinkron
+// dengan data sumber dan otomatis mencakup data lama. Jurnal manual & faktur disimpan di database.
+const AK_DEFAULT_COA = [
+  ['1-1100','Kas','aset','D'],['1-1210','Bank BNI','aset','D'],['1-1220','Bank BCA','aset','D'],['1-1230','Bank BPD','aset','D'],['1-1290','Bank Lainnya','aset','D'],
+  ['1-1300','Piutang Usaha (Faktur)','aset','D'],['1-1310','Piutang Pinjaman','aset','D'],['1-1320','Piutang Karyawan (Kasbon)','aset','D'],
+  ['1-1410','Tabungan Bandwidth','aset','D'],['1-1420','Tabungan Operational','aset','D'],['1-1430','Tabungan Gaji','aset','D'],['1-1440','Tabungan Profit','aset','D'],['1-1490','Tabungan Lainnya','aset','D'],
+  ['1-1510','Dana Service/PSB (titipan bonus karyawan)','aset','D'],['1-1520','Dana Voucher','aset','D'],['1-2100','Aset Lainnya','aset','D'],
+  ['2-1100','Utang Usaha (Faktur)','kewajiban','K'],['2-1200','Utang Pinjaman','kewajiban','K'],['2-1510','Kewajiban Service/PSB (bonus karyawan)','kewajiban','K'],['2-1520','Kewajiban Voucher','kewajiban','K'],
+  ['3-1000','Modal Disetor','ekuitas','K'],['3-2000','Saldo Awal & Penyesuaian Ekuitas','ekuitas','K'],['3-3000','Cadangan Tabungan Gaji & Profit','ekuitas','K'],['3-4000','Prive / Pengurangan Aset','ekuitas','D'],
+  ['4-1000','Pendapatan Usaha','pendapatan','K'],['4-2000','Pendapatan Lain-lain','pendapatan','K'],
+  ['5-1100','Beban Bandwidth / Pokok Pendapatan','beban','D'],['6-1100','Beban Gaji & Bonus','beban','D'],['6-1200','Beban Sewa','beban','D'],['6-1300','Beban Utilitas & Internet Kantor','beban','D'],
+  ['6-1400','Beban Pemasaran','beban','D'],['6-1500','Beban Perawatan & Perbaikan','beban','D'],['6-1900','Beban Operasional Lainnya','beban','D'],['6-2000','Alokasi Tabungan Gaji & Profit (diperlakukan sebagai beban)','beban','D']
+].map(a=>({code:a[0], name:a[1], type:a[2], normal_balance:a[3], is_active:true, is_system:true}));
+const AK_CASH_CODES = ['1-1100','1-1210','1-1220','1-1230','1-1290'];
+const AK_TAB_CODES = ['1-1410','1-1420','1-1430','1-1440','1-1490'];
+const AK_EPS = 0.005;
+
+function akCoa(d){ return (d.coa && d.coa.length) ? d.coa : AK_DEFAULT_COA; }
+function akAccName(d, code){ const a = akCoa(d).find(x=>x.code===code); return a ? a.name : code; }
+function akBankAccount(bank){ const b=(bank||'').trim().toUpperCase(); return b==='BNI'?'1-1210': b==='BCA'?'1-1220': b==='BPD'?'1-1230':'1-1290'; }
+function akSavingAccount(jenis){ const j=(jenis||'').toLowerCase(); return j==='bandwidth'?'1-1410': j==='operational'?'1-1420': j==='gaji'?'1-1430': j==='profit'?'1-1440':'1-1490'; }
+function akCashAccountOfTx(t){
+  const pm = t.payment_method || 'cash';
+  if(pm==='cash') return '1-1100';
+  if(pm==='transfer') return akBankAccount(t.bank);
+  return t.bank ? akBankAccount(t.bank) : '1-1100'; // piutang/hutang/kasbon: bank terisi = lewat transfer
+}
+function akPickAccount(d, t, isIncome){
+  const need = isIncome ? 'pendapatan' : 'beban';
+  const coa = akCoa(d);
+  const tryText = (txt)=>{
+    txt = (txt||'').toLowerCase();
+    for(const m of (d.categoryMap||[])){
+      if(m.keyword && txt.includes(String(m.keyword).toLowerCase())){
+        const a = coa.find(c=>c.code===m.account_code);
+        if(a && a.type===need) return a.code;
+      }
+    }
+    return null;
+  };
+  return tryText(t.category) || tryText(t.description) || (isIncome ? '4-1000' : '6-1900');
+}
+
+function akBuildAutoJournal(d){
+  const out = [];
+  const add = (key, date, ref, desc, lines, origin)=>{
+    const ls = lines.filter(l => l[1] > 0 || l[2] > 0).map(l => ({a:l[0], d:l[1]||0, k:l[2]||0}));
+    if(ls.length) out.push({key, date, ref, desc, source:'auto', lines: ls, origin});
+  };
+  const txIds = new Set(d.transactions.map(t=>t.id));
+  const linked = (row)=> row.related_transaction_id != null && txIds.has(row.related_transaction_id);
+
+  d.transactions.forEach(t=>{
+    const amt = Math.abs(t.amount); if(!(amt > 0)) return;
+    const pm = t.payment_method || 'cash';
+    const income = t.amount > 0;
+    const ref = 'TX-'+t.id, desc = t.description || t.category || 'Transaksi';
+    const o = {type:'transaction', id:t.id};
+    if(PASSTHROUGH_PAYMENT_METHODS.includes(pm)) return; // dijurnal lewat baris tabungan terkaitnya (Dana & Kewajiban Service/Voucher)
+    if(pm === 'tabungan'){
+      const sv = (t.saving_type||'').toLowerCase();
+      if(isPassthroughSavingsType(sv)) return; // idem
+      if(income) return;
+      const tab = akSavingAccount(sv);
+      if(SAVINGS_AS_EXPENSE_TYPES.includes(sv)) add(ref, t.date, ref, desc+' (dari tabungan '+(t.saving_type||'')+')', [['3-3000',amt,0],[tab,0,amt]], o);
+      else add(ref, t.date, ref, desc+' (dari tabungan '+(t.saving_type||'')+')', [[akPickAccount(d,t,false),amt,0],[tab,0,amt]], o);
+      return;
+    }
+    const cash = akCashAccountOfTx(t);
+    if(pm === 'piutang')      add(ref, t.date, ref, desc, income ? [[cash,amt,0],['1-1310',0,amt]] : [['1-1310',amt,0],[cash,0,amt]], o);
+    else if(pm === 'hutang')  add(ref, t.date, ref, desc, income ? [[cash,amt,0],['2-1200',0,amt]] : [['2-1200',amt,0],[cash,0,amt]], o);
+    else if(pm === 'kasbon')  add(ref, t.date, ref, desc, income ? [[cash,amt,0],['1-1320',0,amt]] : [['1-1320',amt,0],[cash,0,amt]], o);
+    else if(income)           add(ref, t.date, ref, desc, [[cash,amt,0],[akPickAccount(d,t,true),0,amt]], o);
+    else                      add(ref, t.date, ref, desc, [[akPickAccount(d,t,false),amt,0],[cash,0,amt]], o);
+  });
+
+  d.savings.forEach(s=>{
+    const amt = Math.abs(s.amount); if(!(amt > 0)) return;
+    const j = (s.jenis||'').toLowerCase();
+    const ref = 'TB-'+s.id, o = {type:'saving', id:s.id};
+    if(isPassthroughSavingsType(j)){
+      const fund = j==='service/psb' ? '1-1510' : '1-1520', liab = j==='service/psb' ? '2-1510' : '2-1520';
+      add(ref, s.date, ref, (s.notes || ('Dana '+s.jenis)), s.amount>0 ? [[fund,amt,0],[liab,0,amt]] : [[liab,amt,0],[fund,0,amt]], o);
+      return;
+    }
+    const tab = akSavingAccount(j);
+    if(s.amount > 0){
+      const lines = [[tab,amt,0],['1-1100',0,amt]];
+      if(SAVINGS_AS_EXPENSE_TYPES.includes(j)){ lines.push(['6-2000',amt,0]); lines.push(['3-3000',0,amt]); }
+      add(ref, s.date, ref, 'Setoran tabungan '+s.jenis+(s.notes?' - '+s.notes:''), lines, o);
+    } else {
+      if(linked(s)) return; // penarikan untuk pengeluaran: sudah dijurnal bersama transaksinya
+      add(ref, s.date, ref, 'Penarikan tabungan '+s.jenis+(s.notes?' - '+s.notes:''), [['1-1100',amt,0],[tab,0,amt]], o);
+    }
+  });
+
+  // Piutang/utang/kasbon yang dicatat langsung (tanpa transaksi kas) -> tidak menggerakkan kas; lawannya akun Saldo Awal & Penyesuaian
+  d.receivables.forEach(r=>{ if(linked(r) || !(r.amount>0)) return; add('AR-'+r.id, r.date, 'AR-'+r.id, 'Piutang dicatat langsung - '+r.name, [['1-1310',r.amount,0],['3-2000',0,r.amount]], {type:'receivable', id:r.id}); });
+  d.payables.forEach(p=>{ if(linked(p) || !(p.amount>0)) return; add('AP-'+p.id, p.date, 'AP-'+p.id, 'Utang dicatat langsung - '+p.name, [['3-2000',p.amount,0],['2-1200',0,p.amount]], {type:'payable', id:p.id}); });
+  d.kasbon.forEach(k=>{ if(linked(k) || !(k.amount>0)) return; add('KB-'+k.id, k.date, 'KB-'+k.id, 'Kasbon dicatat langsung - '+(k.employee_name||''), [['1-1320',k.amount,0],['3-2000',0,k.amount]], {type:'kasbon', id:k.id}); });
+  d.receivablePayments.forEach(p=>{ if(linked(p) || !(p.amount>0)) return; add('ARP-'+p.id, p.date, 'ARP-'+p.id, 'Pembayaran piutang (tanpa transaksi kas)', [['3-2000',p.amount,0],['1-1310',0,p.amount]], {type:'receivable_payment', id:p.id}); });
+  d.payablePayments.forEach(p=>{ if(linked(p) || !(p.amount>0)) return; add('APP-'+p.id, p.date, 'APP-'+p.id, 'Pembayaran utang (tanpa transaksi kas)', [['2-1200',p.amount,0],['3-2000',0,p.amount]], {type:'payable_payment', id:p.id}); });
+  d.kasbonPayments.forEach(p=>{ if(linked(p) || !(p.amount>0)) return; add('KBP-'+p.id, p.date, 'KBP-'+p.id, 'Pembayaran kasbon (tanpa transaksi kas)', [['3-2000',p.amount,0],['1-1320',0,p.amount]], {type:'kasbon_payment', id:p.id}); });
+
+  d.assets.forEach(a=>{
+    const amt = Math.abs(a.amount); if(!(amt>0)) return;
+    add('AS-'+a.id, a.date, 'AS-'+a.id, (a.amount>0?'Penambahan aset: ':'Pengurangan aset: ')+a.name, a.amount>0 ? [['1-2100',amt,0],['3-1000',0,amt]] : [['3-4000',amt,0],['1-2100',0,amt]], {type:'asset', id:a.id});
+  });
+  return out;
+}
+
+function akBuildInvoiceJournal(d){
+  const out = [];
+  (d.invoices||[]).forEach(v=>{
+    const ref = (v.type==='penjualan'?'INV-':'BILL-')+v.number;
+    out.push({key:'INV-'+v.id, date:v.date, ref, desc:(v.type==='penjualan'?'Faktur penjualan ':'Faktur pembelian ')+v.number+' - '+v.party, source:'faktur',
+      lines: v.type==='penjualan' ? [{a:'1-1300',d:v.amount,k:0},{a:v.account_code,d:0,k:v.amount}] : [{a:v.account_code,d:v.amount,k:0},{a:'2-1100',d:0,k:v.amount}], origin:{type:'invoice', id:v.id}});
+  });
+  (d.invoicePayments||[]).forEach(p=>{
+    const v = (d.invoices||[]).find(x=>x.id===p.invoice_id); if(!v) return;
+    const cash = p.method==='cash' ? '1-1100' : akBankAccount(p.bank);
+    out.push({key:'IPAY-'+p.id, date:p.date, ref:'PAY-'+v.number, desc:(v.type==='penjualan'?'Pelunasan/cicilan faktur ':'Pembayaran faktur ')+v.number+' - '+v.party, source:'faktur',
+      lines: v.type==='penjualan' ? [{a:cash,d:p.amount,k:0},{a:'1-1300',d:0,k:p.amount}] : [{a:'2-1100',d:p.amount,k:0},{a:cash,d:0,k:p.amount}], origin:{type:'invoice_payment', id:p.id}});
+  });
+  return out;
+}
+
+function akBuildManualJournal(d){
+  return (d.journalEntries||[]).map(e=>({
+    key:'JU-'+e.id, date:e.date, ref:e.ref || ('JU-'+e.id), desc:e.description, source:'manual', origin:{type:'journal', id:e.id}, createdBy:e.created_by,
+    lines:(d.journalLines||[]).filter(l=>l.entry_id===e.id).map(l=>({a:l.account_code, d:l.debit, k:l.credit, memo:l.memo}))
+  }));
+}
+
+function akAllEntries(d){
+  return [...akBuildAutoJournal(d), ...akBuildInvoiceJournal(d), ...akBuildManualJournal(d)]
+    .sort((x,y)=> x.date===y.date ? String(x.key).localeCompare(String(y.key)) : x.date.localeCompare(y.date));
+}
+
+// Jumlah debit/kredit per akun; periode opsional [from, to] (string YYYY-MM-DD, inklusif)
+function akSum(entries, from, to){
+  const m = {};
+  entries.forEach(e=>{
+    if(from && e.date < from) return;
+    if(to && e.date > to) return;
+    e.lines.forEach(l=>{ const r = m[l.a] || (m[l.a] = {d:0,k:0}); r.d += l.d; r.k += l.k; });
+  });
+  return m;
+}
+function akBal(m, d, code){ // saldo menurut sisi normal akun
+  const a = akCoa(d).find(x=>x.code===code); const r = m[code] || {d:0,k:0};
+  return (a && a.normal_balance==='K') ? r.k - r.d : r.d - r.k;
+}
+function akNetBy(m, d, type){ // total semua akun suatu jenis
+  return akCoa(d).filter(a=>a.type===type).reduce((s,a)=> s + akBal(m,d,a.code), 0);
+}
+
+function akLabaRugi(entries, d, from, to){
+  const m = akSum(entries, from, to);
+  const rows = (pred)=> akCoa(d).filter(pred).map(a=>({code:a.code, name:a.name, amount:akBal(m,d,a.code)})).filter(r=>Math.abs(r.amount)>AK_EPS);
+  const pendapatan = rows(a=>a.type==='pendapatan');
+  const bebanPokok = rows(a=>a.type==='beban' && a.code.startsWith('5'));
+  const bebanOps = rows(a=>a.type==='beban' && !a.code.startsWith('5'));
+  const sum = (arr)=>arr.reduce((s,r)=>s+r.amount,0);
+  const totalPendapatan = sum(pendapatan), totalPokok = sum(bebanPokok), totalOps = sum(bebanOps);
+  return {pendapatan, bebanPokok, bebanOps, totalPendapatan, totalPokok, totalOps, labaKotor: totalPendapatan-totalPokok, labaBersih: totalPendapatan-totalPokok-totalOps};
+}
+function akNeraca(entries, d, to){
+  const m = akSum(entries, null, to);
+  const rows = (type)=> akCoa(d).filter(a=>a.type===type).map(a=>({code:a.code, name:a.name, amount: (()=>{ const r=m[a.code]||{d:0,k:0}; return type==='aset' ? r.d-r.k : r.k-r.d; })()})).filter(r=>Math.abs(r.amount)>AK_EPS);
+  const aset = rows('aset'), kewajiban = rows('kewajiban'), ekuitas = rows('ekuitas');
+  const laba = akNetBy(m,d,'pendapatan') - akNetBy(m,d,'beban'); // laba kumulatif s.d. tanggal laporan
+  const sum = (arr)=>arr.reduce((s,r)=>s+r.amount,0);
+  const totalAset = sum(aset), totalKewajiban = sum(kewajiban), totalEkuitas = sum(ekuitas) + laba;
+  return {aset, kewajiban, ekuitas, laba, totalAset, totalKewajiban, totalEkuitas, selisih: totalAset - totalKewajiban - totalEkuitas};
+}
+function akTrialBalance(entries, d, to){
+  const m = akSum(entries, null, to);
+  const rows = akCoa(d).map(a=>{
+    const r = m[a.code] || {d:0,k:0}; const net = r.d - r.k;
+    return {code:a.code, name:a.name, debit: net>0?net:0, credit: net<0?-net:0};
+  }).filter(r=>r.debit>AK_EPS || r.credit>AK_EPS);
+  const totalD = rows.reduce((s,r)=>s+r.debit,0), totalK = rows.reduce((s,r)=>s+r.credit,0);
+  return {rows, totalD, totalK};
+}
+function akArusKas(entries, d, from, to){
+  const groupOf = (codes)=>{
+    if(codes.some(c=>['2-1200','3-1000','3-2000','3-4000'].includes(c))) return 'pendanaan';
+    if(codes.some(c=>['1-2100','1-1310','1-1320'].includes(c))) return 'investasi';
+    if(codes.some(c=>AK_TAB_CODES.includes(c))) return 'tabungan';
+    return 'operasi';
+  };
+  const groups = {operasi:{}, investasi:{}, pendanaan:{}, tabungan:{}};
+  let opening = 0, net = 0;
+  entries.forEach(e=>{
+    const delta = e.lines.filter(l=>AK_CASH_CODES.includes(l.a)).reduce((s,l)=>s+l.d-l.k,0);
+    if(Math.abs(delta) < AK_EPS) return;
+    if(from && e.date < from){ opening += delta; return; }
+    if(to && e.date > to) return;
+    const others = e.lines.filter(l=>!AK_CASH_CODES.includes(l.a));
+    const g = groupOf(others.map(l=>l.a));
+    const main = others.slice().sort((a,b)=>(b.d+b.k)-(a.d+a.k))[0];
+    const label = (delta>0 ? 'Penerimaan: ' : 'Pengeluaran: ') + (main ? akAccName(d, main.a) : 'Lainnya');
+    groups[g][label] = (groups[g][label]||0) + delta;
+    net += delta;
+  });
+  const out = {};
+  Object.keys(groups).forEach(g=>{
+    const rows = Object.keys(groups[g]).sort().map(k=>({label:k, amount:groups[g][k]}));
+    out[g] = {rows, total: rows.reduce((s,r)=>s+r.amount,0)};
+  });
+  return {groups: out, opening, net, closing: opening + net};
+}
+function akLedger(entries, d, code, from, to){
+  const a = akCoa(d).find(x=>x.code===code); const nb = a ? a.normal_balance : 'D';
+  const sgn = (l)=> nb==='D' ? l.d - l.k : l.k - l.d;
+  let opening = 0; const rows = [];
+  entries.forEach(e=>{
+    const ls = e.lines.filter(l=>l.a===code); if(!ls.length) return;
+    if(from && e.date < from){ opening += ls.reduce((s,l)=>s+sgn(l),0); return; }
+    if(to && e.date > to) return;
+    ls.forEach(l=>rows.push({date:e.date, ref:e.ref, desc:e.desc, d:l.d, k:l.k, delta:sgn(l)}));
+  });
+  let run = opening; rows.forEach(r=>{ run += r.delta; r.balance = run; });
+  return {opening, rows, closing: run};
+}
+
+// Validasi sebuah jurnal (dipakai form jurnal manual). Mengembalikan daftar pesan error.
+function akValidateJournal(j, d){
+  const errs = [];
+  if(!j.date) errs.push('Tanggal wajib diisi.');
+  if(!(j.desc||'').trim()) errs.push('Keterangan wajib diisi.');
+  const lines = j.lines.filter(l => l.account || l.debit || l.credit);
+  if(lines.length < 2) errs.push('Jurnal minimal terdiri dari 2 baris.');
+  let td = 0, tk = 0;
+  lines.forEach((l,i)=>{
+    const n = i+1;
+    const dv = Number(l.debit)||0, kv = Number(l.credit)||0;
+    if(!l.account) errs.push(`Baris ${n}: akun belum dipilih.`);
+    else { const a = akCoa(d).find(x=>x.code===l.account); if(!a) errs.push(`Baris ${n}: akun tidak dikenal.`); else if(a.is_active===false) errs.push(`Baris ${n}: akun ${l.account} nonaktif.`); }
+    if(dv < 0 || kv < 0) errs.push(`Baris ${n}: nominal tidak boleh minus.`);
+    if(dv > 0 && kv > 0) errs.push(`Baris ${n}: isi salah satu saja, debit atau kredit.`);
+    if(!(dv > 0) && !(kv > 0)) errs.push(`Baris ${n}: nominal debit/kredit belum diisi.`);
+    td += dv; tk += kv;
+  });
+  if(Math.abs(td - tk) > AK_EPS) errs.push(`Jurnal tidak balance: total debit ${td.toLocaleString('id-ID')} ≠ total kredit ${tk.toLocaleString('id-ID')} (selisih ${Math.abs(td-tk).toLocaleString('id-ID')}).`);
+  return errs;
+}
+
+// Pemeriksaan silang: buku besar (jurnal otomatis) vs perhitungan lama di Dashboard/Laporan
+function akConsistency(d, fin, paidFor_){
+  const auto = akBuildAutoJournal(d);
+  const all = akAllEntries(d);
+  const m = akSum(auto);
+  const checks = [];
+  const eq = (a,b)=> Math.abs(a-b) <= 1;
+  const push = (label, a, b)=> checks.push({label, ledger:a, app:b, ok:eq(a,b)});
+  const totD = all.reduce((s,e)=>s+e.lines.reduce((x,l)=>x+l.d,0),0), totK = all.reduce((s,e)=>s+e.lines.reduce((x,l)=>x+l.k,0),0);
+  push('Total debit = total kredit (seluruh jurnal)', totD, totK);
+  const unbalanced = all.filter(e=>Math.abs(e.lines.reduce((x,l)=>x+l.d-l.k,0))>AK_EPS).length;
+  push('Jurnal yang tidak balance (harus 0)', unbalanced, 0);
+  const nrc = akNeraca(all, d, null);
+  push('Neraca: Aset = Kewajiban + Ekuitas', nrc.totalAset, nrc.totalKewajiban + nrc.totalEkuitas);
+  const lr = akLabaRugi(auto, d, null, null);
+  push('Pendapatan (jurnal otomatis vs Dashboard)', lr.totalPendapatan, fin.totalIncome);
+  push('Beban (jurnal otomatis vs Dashboard)', lr.totalPokok + lr.totalOps, fin.totalExpense);
+  push('Laba bersih (jurnal otomatis vs Dashboard)', lr.labaBersih, fin.netProfit);
+  push('Saldo Kas + Bank vs Saldo kas Dashboard', AK_CASH_CODES.reduce((s,c)=>s+akBal(m,d,c),0), fin.cashBalance);
+  push('Tabungan perusahaan vs Dashboard', AK_TAB_CODES.reduce((s,c)=>s+akBal(m,d,c),0), fin.totalSavings);
+  push('Dana Service/PSB vs Dashboard', akBal(m,d,'1-1510'), fin.totalServiceFund);
+  push('Dana Voucher vs Dashboard', akBal(m,d,'1-1520'), fin.totalVoucherFund);
+  const sisaP = d.receivables.reduce((s,r)=>s + (r.amount - paidFor_(d.receivablePayments,'receivable_id',r.id)),0);
+  const sisaK = d.kasbon.reduce((s,k)=>s + (k.amount - paidFor_(d.kasbonPayments,'kasbon_id',k.id)),0);
+  const sisaU = d.payables.reduce((s,p)=>s + (p.amount - paidFor_(d.payablePayments,'payable_id',p.id)),0);
+  push('Sisa piutang pinjaman vs tab Piutang', akBal(m,d,'1-1310'), sisaP);
+  push('Sisa kasbon vs tab Kasbon', akBal(m,d,'1-1320'), sisaK);
+  push('Sisa utang pinjaman vs tab Utang', akBal(m,d,'2-1200'), sisaU);
+  const otherAssets = d.assets.reduce((s,a)=>s+a.amount,0);
+  push('Aset lainnya vs tab Laporan', akBal(m,d,'1-2100'), otherAssets);
+  const nA = akNeraca(auto, d, null);
+  const legacyAset = fin.cashBalance + sisaP + sisaK + fin.totalSavings + fin.totalServiceFund + fin.totalVoucherFund + otherAssets;
+  const legacyEkuitas = legacyAset - sisaU - fin.totalServiceFund - fin.totalVoucherFund;
+  push('Total aset vs Neraca lama', nA.totalAset, legacyAset);
+  push('Total ekuitas vs Neraca lama', nA.totalEkuitas, legacyEkuitas);
+  return checks;
+}
+// ==== AKUNTANSI ENGINE END ====
+
+// ==== AKUNTANSI UI START ====
+const akState = { jLines: [{account:'',debit:'',credit:'',memo:''},{account:'',debit:'',credit:'',memo:''}], jPage: 0, payInvoiceId: null };
+const AK_J_PAGE = 25;
+const akFmt = (n)=> formatCurrency(n);
+const akToday = ()=> new Date().toISOString().slice(0,10);
+function akErr(id, msgs){ const el = document.getElementById(id); if(!el) return; if(!msgs || !msgs.length){ el.style.display='none'; el.innerHTML=''; return; } el.innerHTML = [].concat(msgs).map(m=>escapeHtml(m)).join('<br>'); el.style.display='block'; }
+function akIsOwner(){ return currentRole === 'owner'; }
+function akAccountOptions(filterFn, selected){
+  return akCoa(data).filter(a=>a.is_active!==false && (!filterFn || filterFn(a))).map(a=>`<option value="${a.code}" ${a.code===selected?'selected':''}>${a.code} — ${escapeHtml(a.name)}</option>`).join('');
+}
+function akPeriod(){
+  const from = document.getElementById('akFrom').value || null;
+  const to = document.getElementById('akTo').value || null;
+  return {from, to};
+}
+function akSetThisMonth(){
+  const t = akToday();
+  document.getElementById('akFrom').value = t.slice(0,8)+'01';
+  document.getElementById('akTo').value = t;
+}
+
+function akRowsHtml(rows){ return rows.map(r=>`<tr><td style="padding-left:18px;">${escapeHtml(r.name)}</td><td class="right">${akFmt(r.amount)}</td></tr>`).join(''); }
+function akTotalRow(label, val, strong){ return `<tr style="${strong?'background:var(--bg);':''}"><td><b>${label}</b></td><td class="right"><b>${akFmt(val)}</b></td></tr>`; }
+function akHead(label){ return `<tr><td colspan="2" style="font-weight:600; color:var(--text2); padding-top:12px;">${label}</td></tr>`; }
+
+function akReportModel(){
+  const entries = akAllEntries(data);
+  const {from, to} = akPeriod();
+  return {
+    entries, from, to,
+    lr: akLabaRugi(entries, data, from, to),
+    nr: akNeraca(entries, data, to),
+    cf: akArusKas(entries, data, from, to),
+    tb: akTrialBalance(entries, data, to)
+  };
+}
+
+function renderAkuntansi(){
+  const notReady = document.getElementById('akNotReady');
+  if(!document.getElementById('akLabaRugi')) return;
+  if(!data.akReady){
+    // Migrasi belum dijalankan -> tetap tampilkan laporan dari jurnal otomatis (COA bawaan), fitur yang butuh database dimatikan
+    if(!notReady){
+      const box = document.createElement('div'); box.id = 'akNotReady'; box.className = 'login-error'; box.style.display='block'; box.style.marginBottom='14px';
+      box.innerHTML = 'Modul akuntansi belum aktif sepenuhnya: jalankan <b>migration-akuntansi.sql</b> di Supabase SQL Editor untuk mengaktifkan jurnal manual, faktur, rekonsiliasi bank, dan COA yang bisa diubah. Laporan di bawah sudah memakai Daftar Akun bawaan.';
+      document.getElementById('view-akuntansi').prepend(box);
+    }
+  } else if(notReady){ notReady.remove(); }
+
+  if(!document.getElementById('akFrom').value && !document.getElementById('akTo').value && !renderAkuntansi._init){ akSetThisMonth(); renderAkuntansi._init = true; }
+  if(!document.getElementById('akJDate').value) document.getElementById('akJDate').value = akToday();
+  const ro = !data.akReady;
+  ['akJPostBtn','akCoaAddBtn','akMapAddBtn','akInvAddBtn','akBsAddBtn','akAutoMatchBtn'].forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled = ro; });
+
+  renderAkReports(); renderAkJournalForm(); renderAkJournalList(); renderAkLedger(); renderAkCoa(); renderAkInvoices(); renderAkBank(); renderAkChecks();
+}
+
+// ---------- Laporan ----------
+function renderAkReports(){
+  const m = akReportModel();
+  const {lr, nr, cf, tb} = m;
+  document.getElementById('akLabaRugi').innerHTML = `<p class="helper" style="margin-top:0;">${m.from||'awal'} s.d. ${m.to||'sekarang'}</p><table>
+    ${akHead('Pendapatan')}${akRowsHtml(lr.pendapatan)}${akTotalRow('Total pendapatan', lr.totalPendapatan)}
+    ${akHead('Beban pokok')}${akRowsHtml(lr.bebanPokok)}${akTotalRow('Total beban pokok', lr.totalPokok)}
+    ${akTotalRow('Laba kotor', lr.labaKotor, true)}
+    ${akHead('Beban operasional')}${akRowsHtml(lr.bebanOps)}${akTotalRow('Total beban operasional', lr.totalOps)}
+    ${akTotalRow('LABA (RUGI) BERSIH', lr.labaBersih, true)}</table>`;
+  document.getElementById('akNeraca').innerHTML = `<p class="helper" style="margin-top:0;">Per ${m.to||'hari ini'}</p><table>
+    ${akHead('Aset')}${akRowsHtml(nr.aset)}${akTotalRow('Total aset', nr.totalAset, true)}
+    ${akHead('Kewajiban')}${akRowsHtml(nr.kewajiban)}${akTotalRow('Total kewajiban', nr.totalKewajiban)}
+    ${akHead('Ekuitas')}${akRowsHtml(nr.ekuitas)}<tr><td style="padding-left:18px;">Laba (rugi) berjalan s.d. tanggal ini</td><td class="right">${akFmt(nr.laba)}</td></tr>
+    ${akTotalRow('Total ekuitas', nr.totalEkuitas)}
+    ${akTotalRow('Total kewajiban + ekuitas', nr.totalKewajiban + nr.totalEkuitas, true)}</table>
+    <p class="helper">${Math.abs(nr.selisih)<=1 ? '<span class="pill pill-green">Seimbang</span>' : '<span class="pill pill-red">Tidak seimbang, selisih '+akFmt(nr.selisih)+'</span>'}</p>`;
+  const names = {operasi:'Aktivitas operasional', investasi:'Aktivitas investasi (aset lain, piutang pinjaman, kasbon)', pendanaan:'Aktivitas pendanaan (utang pinjaman, modal, prive)', tabungan:'Pemindahan ke/dari tabungan perusahaan'};
+  let cfHtml = `<p class="helper" style="margin-top:0;">${m.from||'awal'} s.d. ${m.to||'sekarang'} — kas = Kas + seluruh rekening bank</p><table>${akTotalRow('Saldo kas awal', cf.opening, true)}`;
+  Object.keys(names).forEach(g=>{
+    const grp = cf.groups[g]; if(!grp.rows.length) return;
+    cfHtml += akHead(names[g]) + grp.rows.map(r=>`<tr><td style="padding-left:18px;">${escapeHtml(r.label)}</td><td class="right ${r.amount<0?'expense':''}">${akFmt(r.amount)}</td></tr>`).join('') + akTotalRow('Arus kas bersih — '+g, grp.total);
+  });
+  cfHtml += akTotalRow('Kenaikan (penurunan) kas', cf.net) + akTotalRow('SALDO KAS AKHIR', cf.closing, true) + '</table>';
+  document.getElementById('akArusKas').innerHTML = cfHtml;
+  document.getElementById('akTrialBalance').innerHTML = `<table><thead><tr><th>Kode</th><th>Akun</th><th class="right">Debit</th><th class="right">Kredit</th></tr></thead><tbody>
+    ${tb.rows.map(r=>`<tr><td>${r.code}</td><td>${escapeHtml(r.name)}</td><td class="right">${r.debit?akFmt(r.debit):''}</td><td class="right">${r.credit?akFmt(r.credit):''}</td></tr>`).join('')}
+    <tr style="background:var(--bg);"><td colspan="2"><b>Total</b></td><td class="right"><b>${akFmt(tb.totalD)}</b></td><td class="right"><b>${akFmt(tb.totalK)}</b></td></tr></tbody></table>
+    <p class="helper">Neraca saldo kumulatif s.d. ${m.to||'sekarang'}. ${Math.abs(tb.totalD-tb.totalK)<=1?'<span class="pill pill-green">Debit = Kredit</span>':'<span class="pill pill-red">Tidak seimbang</span>'}</p>`;
+}
+
+// ---------- Jurnal manual ----------
+function akUpdateJTotals(){
+  let td=0, tk=0;
+  akState.jLines.forEach(l=>{ td += Number(l.debit)||0; tk += Number(l.credit)||0; });
+  document.getElementById('akJTotD').innerHTML = `<b>${akFmt(td)}</b>`;
+  document.getElementById('akJTotK').innerHTML = `<b>${akFmt(tk)}</b>`;
+  const diff = td - tk;
+  document.getElementById('akJBalanceMsg').innerHTML = (td===0 && tk===0) ? '' : (Math.abs(diff) <= AK_EPS ? '<span class="pill pill-green">Balance</span>' : `<span class="pill pill-red">Selisih ${akFmt(Math.abs(diff))}</span>`);
+}
+function renderAkJournalForm(){
+  const active = document.activeElement;
+  if(active && active.closest && active.closest('#akJLines')) return; // jangan ganggu pengetikan
+  const opts = akAccountOptions();
+  document.getElementById('akJLines').innerHTML = akState.jLines.map((l,i)=>`<tr>
+    <td><select data-akj="account" data-i="${i}"><option value="">— pilih akun —</option>${opts.replace(`value="${l.account}"`, `value="${l.account}" selected`)}</select></td>
+    <td><input type="number" min="0" step="0.01" data-akj="debit" data-i="${i}" value="${l.debit}" class="right"></td>
+    <td><input type="number" min="0" step="0.01" data-akj="credit" data-i="${i}" value="${l.credit}" class="right"></td>
+    <td><input type="text" data-akj="memo" data-i="${i}" value="${escapeHtml(l.memo||'')}" placeholder="memo"></td>
+    <td>${akState.jLines.length>2?`<button class="del-btn" data-akj-del="${i}">×</button>`:''}</td></tr>`).join('');
+  akUpdateJTotals();
+}
+document.getElementById('akJLines').addEventListener('input', (e)=>{
+  const el = e.target; const f = el.dataset.akj; if(!f) return;
+  const i = parseInt(el.dataset.i,10);
+  if((f==='debit'||f==='credit') && el.value !== '' && Number(el.value) < 0){ el.value = ''; }
+  akState.jLines[i][f] = el.value;
+  if(f==='debit' && el.value) { akState.jLines[i].credit=''; const c = document.querySelector(`[data-akj="credit"][data-i="${i}"]`); if(c) c.value=''; }
+  if(f==='credit' && el.value) { akState.jLines[i].debit=''; const c = document.querySelector(`[data-akj="debit"][data-i="${i}"]`); if(c) c.value=''; }
+  akUpdateJTotals();
+});
+document.getElementById('akJLines').addEventListener('change', (e)=>{ if(e.target.dataset.akj==='account') akState.jLines[parseInt(e.target.dataset.i,10)].account = e.target.value; });
+document.getElementById('akJLines').addEventListener('click', (e)=>{
+  const b = e.target.closest('[data-akj-del]'); if(!b) return;
+  akState.jLines.splice(parseInt(b.dataset.akjDel,10),1); document.activeElement.blur(); renderAkJournalForm();
+});
+document.getElementById('akJAddLineBtn').addEventListener('click', ()=>{ akState.jLines.push({account:'',debit:'',credit:'',memo:''}); document.activeElement.blur(); renderAkJournalForm(); });
+document.getElementById('akJPostBtn').addEventListener('click', async ()=>{
+  const j = { date: document.getElementById('akJDate').value, desc: document.getElementById('akJDesc').value, lines: akState.jLines.map(l=>({account:l.account, debit:l.debit, credit:l.credit, memo:l.memo})) };
+  const errs = akValidateJournal(j, data);
+  akErr('akJError', errs); if(errs.length) return;
+  const btn = document.getElementById('akJPostBtn'); btn.disabled = true;
+  try{
+    const lines = j.lines.filter(l=>l.account && (Number(l.debit)>0 || Number(l.credit)>0)).map(l=>({account_code:l.account, debit:Number(l.debit)||0, credit:Number(l.credit)||0, memo:l.memo||null}));
+    const { error } = await sb.rpc('post_journal', { p_date: j.date, p_ref: document.getElementById('akJRef').value.trim() || null, p_description: j.desc.trim(), p_user: currentUsername, p_lines: lines });
+    if(error) throw error;
+    akState.jLines = [{account:'',debit:'',credit:'',memo:''},{account:'',debit:'',credit:'',memo:''}];
+    document.getElementById('akJDesc').value=''; document.getElementById('akJRef').value='';
+    flashSaved(); await loadAllData(); renderAll();
+    logActivity('create', 'journal_entries', `Jurnal manual: ${j.desc.trim()}`);
+  }catch(e){ akErr('akJError', 'Gagal posting: ' + (e.message||e)); }
+  finally{ btn.disabled = !data.akReady; }
+});
+
+function renderAkJournalList(){
+  const src = document.getElementById('akJFilterSource').value;
+  const q = document.getElementById('akJSearch').value.trim().toLowerCase();
+  let entries = akAllEntries(data).reverse();
+  if(src) entries = entries.filter(e=>e.source===src);
+  if(q) entries = entries.filter(e=> (e.desc||'').toLowerCase().includes(q) || (e.ref||'').toLowerCase().includes(q) || e.lines.some(l=>l.a.includes(q) || akAccName(data,l.a).toLowerCase().includes(q)));
+  const pages = Math.max(1, Math.ceil(entries.length/AK_J_PAGE));
+  if(akState.jPage >= pages) akState.jPage = pages-1;
+  const slice = entries.slice(akState.jPage*AK_J_PAGE, (akState.jPage+1)*AK_J_PAGE);
+  const srcLabel = {auto:'Otomatis', faktur:'Faktur', manual:'Manual'};
+  document.getElementById('akJournalTable').innerHTML = slice.map(e=> e.lines.map((l,i)=>`<tr>
+      <td>${i===0?e.date:''}</td><td>${i===0?escapeHtml(e.ref||''):''}</td>
+      <td>${i===0?escapeHtml(e.desc||'')+' <span class="pill '+(e.source==='manual'?'pill-amber':e.source==='faktur'?'pill-green':'pill-green')+'" style="'+(e.source==='auto'?'background:var(--accent-bg);color:var(--accent);':'')+'">'+srcLabel[e.source]+'</span>':''}</td>
+      <td style="${l.k>0?'padding-left:28px;':''}">${l.a} ${escapeHtml(akAccName(data,l.a))}</td>
+      <td class="right">${l.d?akFmt(l.d):''}</td><td class="right">${l.k?akFmt(l.k):''}</td>
+      <td>${i===0 && e.source==='manual' && akIsOwner() ? `<button class="del-btn" data-akdel="journal" data-id="${e.origin.id}">Hapus</button>` : ''}</td></tr>`).join('')).join('')
+    || '<tr><td colspan="7" class="empty">Belum ada jurnal.</td></tr>';
+  document.getElementById('akJPageInfo').textContent = `${entries.length} jurnal · halaman ${akState.jPage+1}/${pages}`;
+  document.getElementById('akJPrev').disabled = akState.jPage<=0;
+  document.getElementById('akJNext').disabled = akState.jPage>=pages-1;
+}
+document.getElementById('akJFilterSource').addEventListener('change', ()=>{ akState.jPage=0; renderAkJournalList(); });
+document.getElementById('akJSearch').addEventListener('input', ()=>{ akState.jPage=0; renderAkJournalList(); });
+document.getElementById('akJPrev').addEventListener('click', ()=>{ akState.jPage--; renderAkJournalList(); });
+document.getElementById('akJNext').addEventListener('click', ()=>{ akState.jPage++; renderAkJournalList(); });
+
+// ---------- Buku besar ----------
+function renderAkLedger(){
+  const sel = document.getElementById('akLedgerAccount');
+  const cur = sel.value;
+  sel.innerHTML = akAccountOptions(null, cur);
+  if(cur) sel.value = cur;
+  const code = sel.value;
+  const lg = akLedger(akAllEntries(data), data, code, document.getElementById('akLedgerFrom').value || null, document.getElementById('akLedgerTo').value || null);
+  document.getElementById('akLedgerTable').innerHTML =
+    `<tr style="background:var(--bg);"><td colspan="5"><b>Saldo awal</b></td><td class="right"><b>${akFmt(lg.opening)}</b></td></tr>` +
+    lg.rows.map(r=>`<tr><td>${r.date}</td><td>${escapeHtml(r.ref||'')}</td><td>${escapeHtml(r.desc||'')}</td><td class="right">${r.d?akFmt(r.d):''}</td><td class="right">${r.k?akFmt(r.k):''}</td><td class="right">${akFmt(r.balance)}</td></tr>`).join('') +
+    `<tr style="background:var(--bg);"><td colspan="5"><b>Saldo akhir</b></td><td class="right"><b>${akFmt(lg.closing)}</b></td></tr>`;
+}
+['akLedgerAccount','akLedgerFrom','akLedgerTo'].forEach(id=>document.getElementById(id).addEventListener('change', renderAkLedger));
+
+// ---------- COA ----------
+const AK_TYPE_PREFIX = { aset:['1'], kewajiban:['2'], ekuitas:['3'], pendapatan:['4'], beban:['5','6'] };
+function renderAkCoa(){
+  const m = akSum(akAllEntries(data));
+  const typeLabel = {aset:'Aset', kewajiban:'Kewajiban', ekuitas:'Ekuitas', pendapatan:'Pendapatan', beban:'Beban'};
+  const usedCodes = new Set([...(data.journalLines||[]).map(l=>l.account_code), ...(data.invoices||[]).map(i=>i.account_code), ...(data.categoryMap||[]).map(c=>c.account_code)]);
+  document.getElementById('akCoaTable').innerHTML = akCoa(data).map(a=>`<tr>
+    <td>${a.code}</td><td>${escapeHtml(a.name)}${a.is_active===false?' <span class="pill pill-red">nonaktif</span>':''}</td><td>${typeLabel[a.type]}</td>
+    <td class="right">${akFmt(akBal(m,data,a.code))}</td>
+    <td>${akIsOwner() && !a.is_system && !usedCodes.has(a.code) ? `<button class="del-btn" data-akdel="coa" data-id="${a.code}">Hapus</button>` : ''}</td></tr>`).join('');
+  const mapSel = document.getElementById('akMapAccount');
+  const curMap = mapSel.value;
+  mapSel.innerHTML = akAccountOptions(a=>a.type==='pendapatan'||a.type==='beban', curMap);
+  document.getElementById('akMapTable').innerHTML = (data.categoryMap||[]).map(c=>`<tr><td>${escapeHtml(c.keyword)}</td><td>${c.account_code} ${escapeHtml(akAccName(data,c.account_code))}</td>
+    <td>${akIsOwner()?`<button class="del-btn" data-akdel="map" data-id="${c.id}">Hapus</button>`:''}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Belum ada pemetaan.</td></tr>';
+}
+document.getElementById('akCoaAddBtn').addEventListener('click', async ()=>{
+  const code = document.getElementById('akCoaCode').value.trim();
+  const name = document.getElementById('akCoaName').value.trim();
+  const type = document.getElementById('akCoaType').value;
+  const errs = [];
+  if(!/^[1-6]-\d{4}$/.test(code)) errs.push('Format kode harus seperti 6-1600 (angka-4 digit).');
+  else if(!AK_TYPE_PREFIX[type].includes(code[0])) errs.push(`Kode untuk ${type} harus diawali angka ${AK_TYPE_PREFIX[type].join(' atau ')}.`);
+  if(akCoa(data).some(a=>a.code===code)) errs.push('Kode akun sudah dipakai.');
+  if(!name) errs.push('Nama akun wajib diisi.');
+  akErr('akCoaError', errs); if(errs.length) return;
+  const normal = (type==='aset'||type==='beban') ? 'D' : 'K';
+  const { error } = await sb.from('coa_accounts').insert({ code, name, type, normal_balance: normal, is_system: false });
+  if(error){ akErr('akCoaError', 'Gagal menyimpan: '+error.message); return; }
+  document.getElementById('akCoaCode').value=''; document.getElementById('akCoaName').value='';
+  flashSaved(); await loadAllData(); renderAll(); logActivity('create','coa_accounts',`Akun ${code} ${name}`);
+});
+document.getElementById('akMapAddBtn').addEventListener('click', async ()=>{
+  const keyword = document.getElementById('akMapKeyword').value.trim().toLowerCase();
+  const account_code = document.getElementById('akMapAccount').value;
+  if(!keyword || !account_code){ alert('Isi kata kunci dan pilih akun.'); return; }
+  const { error } = await sb.from('category_map').insert({ keyword, account_code });
+  if(error){ alert('Gagal menyimpan: '+error.message); return; }
+  document.getElementById('akMapKeyword').value='';
+  flashSaved(); await loadAllData(); renderAll(); logActivity('create','category_map',`${keyword} → ${account_code}`);
+});
+
+// ---------- Faktur ----------
+function akInvStatus(v){
+  const paid = akInvPaid(v.id), left = v.amount - paid;
+  if(left <= AK_EPS) return {paid, left:0, key:'paid', label:'Lunas', cls:'pill-green'};
+  if(v.due_date && v.due_date < akToday()) return {paid, left, key:'overdue', label:'Jatuh tempo', cls:'pill-red'};
+  return {paid, left, key:'open', label: paid>0?'Sebagian':'Belum lunas', cls:'pill-amber'};
+}
+function akInvPaid(id){ return (data.invoicePayments||[]).filter(p=>p.invoice_id===id).reduce((s,p)=>s+p.amount,0); }
+function akFillInvAccounts(){
+  const type = document.getElementById('akInvType').value;
+  const sel = document.getElementById('akInvAccount'); const cur = sel.value;
+  sel.innerHTML = akAccountOptions(a => type==='penjualan' ? a.type==='pendapatan' : a.type==='beban');
+  if([...sel.options].some(o=>o.value===cur)) sel.value = cur;
+}
+function renderAkInvoices(){
+  if(!document.getElementById('akInvDate').value) document.getElementById('akInvDate').value = akToday();
+  akFillInvAccounts();
+  const inv = data.invoices||[];
+  let ar=0, ap=0, over=0;
+  inv.forEach(v=>{ const s=akInvStatus(v); if(v.type==='penjualan') ar+=s.left; else ap+=s.left; if(s.key==='overdue') over++; });
+  document.getElementById('akInvSummary').innerHTML = `
+    <div class="card"><p class="metric-label">Piutang pelanggan (belum dibayar)</p><p class="metric-value" style="color:var(--green)">${akFmt(ar)}</p></div>
+    <div class="card"><p class="metric-label">Utang ke supplier (belum dibayar)</p><p class="metric-value" style="color:var(--red)">${akFmt(ap)}</p></div>
+    <div class="card"><p class="metric-label">Faktur jatuh tempo</p><p class="metric-value" style="color:${over?'var(--red)':'inherit'}">${over}</p></div>`;
+  const f = document.getElementById('akInvFilter').value;
+  const rows = inv.filter(v=>!f || akInvStatus(v).key===f);
+  document.getElementById('akInvTable').innerHTML = rows.map(v=>{ const s=akInvStatus(v); return `<tr>
+    <td>${escapeHtml(v.number)}</td><td>${v.type==='penjualan'?'Penjualan':'Pembelian'}</td><td>${escapeHtml(v.party)}</td><td>${v.date}</td><td>${v.due_date||'-'}</td>
+    <td class="right">${akFmt(v.amount)}</td><td class="right">${akFmt(s.paid)}</td><td class="right">${akFmt(s.left)}</td>
+    <td><span class="pill ${s.cls}">${s.label}</span></td>
+    <td style="white-space:nowrap;">${s.left>0?`<button class="del-btn" style="color:var(--accent);" data-akpay="${v.id}">Bayar</button> `:''}<button class="del-btn" style="color:var(--accent);" data-akhist="${v.id}">Riwayat</button>${akIsOwner()?` <button class="del-btn" data-akdel="invoice" data-id="${v.id}">Hapus</button>`:''}</td></tr>`; }).join('') || '<tr><td colspan="10" class="empty">Belum ada faktur.</td></tr>';
+  if(akState.payInvoiceId) akOpenPayCard(akState.payInvoiceId, true);
+}
+document.getElementById('akInvType').addEventListener('change', akFillInvAccounts);
+document.getElementById('akInvFilter').addEventListener('change', renderAkInvoices);
+document.getElementById('akInvAddBtn').addEventListener('click', async ()=>{
+  const type = document.getElementById('akInvType').value;
+  const number = document.getElementById('akInvNumber').value.trim();
+  const party = document.getElementById('akInvParty').value.trim();
+  const date = document.getElementById('akInvDate').value;
+  const due = document.getElementById('akInvDue').value || null;
+  const amount = parseFloat(document.getElementById('akInvAmount').value);
+  const account_code = document.getElementById('akInvAccount').value;
+  const notes = document.getElementById('akInvNotes').value.trim() || null;
+  const errs = [];
+  if(!number) errs.push('Nomor faktur wajib diisi.');
+  if((data.invoices||[]).some(v=>v.type===type && v.number.toLowerCase()===number.toLowerCase())) errs.push('Nomor faktur sudah dipakai untuk jenis ini.');
+  if(!party) errs.push('Nama pelanggan/supplier wajib diisi.');
+  if(!date) errs.push('Tanggal faktur wajib diisi.');
+  if(due && date && due < date) errs.push('Jatuh tempo tidak boleh sebelum tanggal faktur.');
+  if(isNaN(amount) || amount <= 0) errs.push('Nominal harus lebih dari 0 (tanpa minus).');
+  if(!account_code) errs.push('Pilih akun pendapatan/beban.');
+  akErr('akInvError', errs); if(errs.length) return;
+  const { error } = await sb.from('invoices').insert({ type, number, party, date, due_date: due, amount, account_code, notes, created_by: currentUsername });
+  if(error){ akErr('akInvError', 'Gagal menyimpan: '+error.message); return; }
+  ['akInvNumber','akInvParty','akInvAmount','akInvNotes','akInvDue'].forEach(id=>document.getElementById(id).value='');
+  flashSaved(); await loadAllData(); renderAll(); logActivity('create','invoices',`Faktur ${type} ${number} ${party} ${formatCurrency(amount)}`);
+});
+function akOpenPayCard(id, keep){
+  const v = (data.invoices||[]).find(x=>x.id===id); if(!v){ akState.payInvoiceId=null; document.getElementById('akInvPayCard').style.display='none'; return; }
+  akState.payInvoiceId = id;
+  const s = akInvStatus(v);
+  document.getElementById('akInvPayCard').style.display = '';
+  document.getElementById('akInvPayTitle').textContent = `Pembayaran faktur ${v.number} — ${v.party} (sisa ${akFmt(s.left)})`;
+  if(!keep){ document.getElementById('akPayDate').value = akToday(); document.getElementById('akPayAmount').value = s.left>0 ? s.left : ''; document.getElementById('akPayNotes').value=''; akErr('akPayError', null); }
+  const pays = (data.invoicePayments||[]).filter(p=>p.invoice_id===id);
+  document.getElementById('akPayHistory').innerHTML = pays.length ? `<table><thead><tr><th>Tanggal</th><th class="right">Nominal</th><th>Metode</th><th>Catatan</th><th></th></tr></thead><tbody>` +
+    pays.map(p=>`<tr><td>${p.date}</td><td class="right">${akFmt(p.amount)}</td><td>${p.method==='cash'?'Cash':'Transfer '+escapeHtml(p.bank||'')}</td><td>${escapeHtml(p.notes||'')}</td><td>${akIsOwner()?`<button class="del-btn" data-akdel="invpay" data-id="${p.id}">Hapus</button>`:''}</td></tr>`).join('') + '</tbody></table>' : '<p class="helper">Belum ada pembayaran.</p>';
+  if(!keep) document.getElementById('akInvPayCard').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+document.getElementById('akPayCancelBtn').addEventListener('click', ()=>{ akState.payInvoiceId=null; document.getElementById('akInvPayCard').style.display='none'; });
+document.getElementById('akPaySaveBtn').addEventListener('click', async ()=>{
+  const v = (data.invoices||[]).find(x=>x.id===akState.payInvoiceId); if(!v) return;
+  const s = akInvStatus(v);
+  const date = document.getElementById('akPayDate').value;
+  const amount = parseFloat(document.getElementById('akPayAmount').value);
+  const method = document.getElementById('akPayMethod').value;
+  const bank = method==='transfer' ? document.getElementById('akPayBank').value : null;
+  const errs = [];
+  if(!date) errs.push('Tanggal wajib diisi.');
+  else if(date < v.date) errs.push('Tanggal pembayaran tidak boleh sebelum tanggal faktur.');
+  if(isNaN(amount) || amount <= 0) errs.push('Nominal harus lebih dari 0 (tanpa minus).');
+  else if(amount > s.left + AK_EPS) errs.push(`Nominal melebihi sisa tagihan (${akFmt(s.left)}).`);
+  akErr('akPayError', errs); if(errs.length) return;
+  const { error } = await sb.from('invoice_payments').insert({ invoice_id: v.id, date, amount, method, bank, notes: document.getElementById('akPayNotes').value.trim() || null, created_by: currentUsername });
+  if(error){ akErr('akPayError', 'Gagal menyimpan: '+error.message); return; }
+  flashSaved(); await loadAllData(); renderAll(); logActivity('create','invoice_payments',`Pembayaran faktur ${v.number} ${formatCurrency(amount)}`);
+  akOpenPayCard(v.id);
+});
+
+// ---------- Rekonsiliasi bank ----------
+function akBankCandidates(){
+  const out = [];
+  data.transactions.forEach(t=>{
+    const pm = t.payment_method;
+    const viaBank = pm==='transfer' || (['piutang','hutang','kasbon'].includes(pm) && t.bank);
+    if(!viaBank || !t.amount) return;
+    out.push({key:'transaction:'+t.id, type:'transaction', id:t.id, date:t.date, acct:akBankAccount(t.bank), dir:t.amount>0?'masuk':'keluar', amount:Math.abs(t.amount), desc:t.description||t.category||'Transaksi', bank:t.bank||'-'});
+  });
+  (data.invoicePayments||[]).forEach(p=>{
+    if(p.method!=='transfer') return;
+    const v = (data.invoices||[]).find(x=>x.id===p.invoice_id); if(!v) return;
+    out.push({key:'invoice_payment:'+p.id, type:'invoice_payment', id:p.id, date:p.date, acct:akBankAccount(p.bank), dir:v.type==='penjualan'?'masuk':'keluar', amount:p.amount, desc:`Faktur ${v.number} - ${v.party}`, bank:p.bank||'-'});
+  });
+  return out;
+}
+function akDayDiff(a,b){ return Math.abs((new Date(a)-new Date(b))/86400000); }
+function akMatchedKeys(){ return new Set((data.bankLines||[]).filter(b=>b.matched_type && b.matched_id!=null && b.matched_type!=='journal').map(b=>b.matched_type+':'+b.matched_id)); }
+function akFindMatches(line, cands, used){
+  return cands.filter(c=>!used.has(c.key) && c.acct===akBankAccount(line.bank) && c.dir===line.direction && Math.abs(c.amount-line.amount)<=AK_EPS)
+    .sort((x,y)=>akDayDiff(x.date,line.date)-akDayDiff(y.date,line.date));
+}
+function renderAkBank(){
+  if(!document.getElementById('akBsDate').value) document.getElementById('akBsDate').value = akToday();
+  const lines = data.bankLines||[];
+  const cands = akBankCandidates(); const used = akMatchedKeys();
+  const bankF = document.getElementById('akRecBankFilter').value, stF = document.getElementById('akRecStatusFilter').value;
+  const matched = lines.filter(b=>b.matched_type), unmatched = lines.filter(b=>!b.matched_type);
+  const unIn = unmatched.filter(b=>b.direction==='masuk').reduce((s,b)=>s+b.amount,0), unOut = unmatched.filter(b=>b.direction==='keluar').reduce((s,b)=>s+b.amount,0);
+  const internalUn = cands.filter(c=>!used.has(c.key));
+  document.getElementById('akRecSummary').innerHTML = `
+    <div class="card"><p class="metric-label">Baris rekening koran</p><p class="metric-value">${lines.length}</p><p class="metric-sub">${matched.length} cocok · ${unmatched.length} belum</p></div>
+    <div class="card"><p class="metric-label">Koran belum tercatat — masuk</p><p class="metric-value" style="color:var(--green)">${akFmt(unIn)}</p></div>
+    <div class="card"><p class="metric-label">Koran belum tercatat — keluar</p><p class="metric-value" style="color:var(--red)">${akFmt(unOut)}</p></div>
+    <div class="card"><p class="metric-label">Catatan internal belum di koran</p><p class="metric-value">${internalUn.length}</p></div>`;
+  let rows = lines.filter(b=>(!bankF||b.bank===bankF) && (!stF || (stF==='matched'?!!b.matched_type:!b.matched_type)));
+  document.getElementById('akBsTable').innerHTML = rows.map(b=>{
+    let matchTxt = '', action = '';
+    if(b.matched_type){
+      const c = cands.find(x=>x.key===b.matched_type+':'+b.matched_id);
+      matchTxt = b.matched_type==='journal' ? `Jurnal penyesuaian #${b.matched_id}` : (c ? `${c.date} · ${escapeHtml(c.desc)}` : `${b.matched_type} #${b.matched_id}`);
+      action = `<button class="del-btn" style="color:var(--text2);" data-akunmatch="${b.id}">Batalkan</button>`;
+    } else {
+      const opts = akFindMatches(b, cands, used);
+      matchTxt = opts.length ? `<select data-akpick="${b.id}"><option value="">— pilih catatan internal (${opts.length}) —</option>${opts.map(c=>`<option value="${c.key}">${c.date} · ${escapeHtml(c.desc)}</option>`).join('')}</select>` : '<span class="helper">Tidak ada catatan internal yang cocok</span>';
+      action = `<button class="del-btn" style="color:var(--accent);" data-akadj="${b.id}">Buat jurnal</button>`;
+    }
+    return `<tr><td>${escapeHtml(b.bank)}</td><td>${b.date}</td><td>${escapeHtml(b.description||'')}</td><td>${b.direction==='masuk'?'Masuk':'Keluar'}</td><td class="right">${akFmt(b.amount)}</td><td>${matchTxt}</td>
+      <td style="white-space:nowrap;">${action}${akIsOwner()?` <button class="del-btn" data-akdel="bsl" data-id="${b.id}">Hapus</button>`:''}</td></tr>`;
+  }).join('') || '<tr><td colspan="7" class="empty">Belum ada rekening koran.</td></tr>';
+  const f = bankF ? internalUn.filter(c=>c.acct===akBankAccount(bankF)) : internalUn;
+  document.getElementById('akUnmatchedInternal').innerHTML = f.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,100).map(c=>`<tr><td>${c.date}</td><td>${escapeHtml(c.bank)}</td><td>${escapeHtml(c.desc)}</td><td>${c.dir==='masuk'?'Masuk':'Keluar'}</td><td class="right">${akFmt(c.amount)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Semua catatan transfer sudah cocok.</td></tr>';
+}
+document.getElementById('akRecBankFilter').addEventListener('change', renderAkBank);
+document.getElementById('akRecStatusFilter').addEventListener('change', renderAkBank);
+document.getElementById('akBsAddBtn').addEventListener('click', async ()=>{
+  const bank = document.getElementById('akBankSel').value, date = document.getElementById('akBsDate').value;
+  const description = document.getElementById('akBsDesc').value.trim(), direction = document.getElementById('akBsDir').value;
+  const amount = parseFloat(document.getElementById('akBsAmount').value);
+  const errs = [];
+  if(!date) errs.push('Tanggal wajib diisi.');
+  if(isNaN(amount) || amount <= 0) errs.push('Nominal harus lebih dari 0 (tanpa minus).');
+  akErr('akBsError', errs); if(errs.length) return;
+  const { error } = await sb.from('bank_statement_lines').insert({ bank, date, description, direction, amount, created_by: currentUsername });
+  if(error){ akErr('akBsError', 'Gagal menyimpan: '+error.message); return; }
+  document.getElementById('akBsDesc').value=''; document.getElementById('akBsAmount').value='';
+  flashSaved(); await loadAllData(); renderAll(); logActivity('create','bank_statement_lines',`${bank} ${direction} ${formatCurrency(amount)}`);
+});
+function akParseDate(v){
+  if(v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  if(typeof v === 'number'){ const dt = XLSX.SSF.parse_date_code(v); if(dt) return `${dt.y}-${String(dt.m).padStart(2,'0')}-${String(dt.d).padStart(2,'0')}`; }
+  const s = String(v||'').trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/); if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return null;
+}
+function akParseNum(v){ if(typeof v==='number') return v; const s = String(v||'').replace(/[^\d,.-]/g,''); if(!s) return 0; const n = s.includes(',') && s.lastIndexOf(',')>s.lastIndexOf('.') ? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,''); return parseFloat(n)||0; }
+document.getElementById('akBsFile').addEventListener('change', async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  try{
+    const wb = XLSX.read(await file.arrayBuffer(), {type:'array', cellDates:true});
+    const rowsRaw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
+    const pick = (r, names)=>{ const k = Object.keys(r).find(x=>names.includes(x.trim().toLowerCase())); return k ? r[k] : ''; };
+    const bank = document.getElementById('akBankSel').value;
+    const toInsert = []; const bad = [];
+    rowsRaw.forEach((r,i)=>{
+      const date = akParseDate(pick(r,['tanggal','date','tgl']));
+      const masuk = akParseNum(pick(r,['masuk','kredit','credit','cr']));
+      const keluar = akParseNum(pick(r,['keluar','debet','debit','db']));
+      const desc = String(pick(r,['keterangan','description','uraian','deskripsi'])||'');
+      if(!date){ bad.push(`Baris ${i+2}: tanggal tidak terbaca`); return; }
+      if(masuk < 0 || keluar < 0){ bad.push(`Baris ${i+2}: nominal minus ditolak`); return; }
+      if(masuk>0 && keluar>0){ bad.push(`Baris ${i+2}: masuk dan keluar terisi bersamaan`); return; }
+      if(!(masuk>0) && !(keluar>0)){ bad.push(`Baris ${i+2}: nominal kosong`); return; }
+      toInsert.push({bank, date, description: desc, direction: masuk>0?'masuk':'keluar', amount: masuk>0?masuk:keluar, created_by: currentUsername});
+    });
+    if(!toInsert.length){ akErr('akBsError', ['Tidak ada baris valid.', ...bad.slice(0,5)]); return; }
+    const { error } = await sb.from('bank_statement_lines').insert(toInsert);
+    if(error) throw error;
+    akErr('akBsError', bad.length ? [`${toInsert.length} baris diimpor, ${bad.length} dilewati:`, ...bad.slice(0,8)] : null);
+    flashSaved(); await loadAllData(); renderAll(); logActivity('create','bank_statement_lines',`Impor ${toInsert.length} baris rekening koran ${bank}`);
+  }catch(err){ akErr('akBsError', 'Gagal impor: '+(err.message||err)); }
+  e.target.value = '';
+});
+document.getElementById('akAutoMatchBtn').addEventListener('click', async ()=>{
+  const cands = akBankCandidates(); const used = akMatchedKeys(); let n = 0;
+  for(const b of (data.bankLines||[]).filter(x=>!x.matched_type)){
+    const opts = akFindMatches(b, cands, used).filter(c=>akDayDiff(c.date,b.date) <= 3);
+    if(!opts.length) continue;
+    const c = opts[0]; used.add(c.key);
+    const { error } = await sb.from('bank_statement_lines').update({matched_type:c.type, matched_id:c.id, matched_at:new Date().toISOString()}).eq('id', b.id);
+    if(!error) n++;
+  }
+  await loadAllData(); renderAll(); alert(n ? `${n} baris berhasil dicocokkan otomatis (nominal, arah, bank sama; selisih tanggal ≤ 3 hari).` : 'Tidak ada baris yang bisa dicocokkan otomatis.');
+  if(n) logActivity('update','bank_statement_lines',`Cocokkan otomatis ${n} baris`);
+});
+document.getElementById('akBsTable').addEventListener('change', async (e)=>{
+  const sel = e.target.closest('[data-akpick]'); if(!sel || !sel.value) return;
+  const [type, id] = sel.value.split(':');
+  const { error } = await sb.from('bank_statement_lines').update({matched_type:type, matched_id:parseInt(id,10), matched_at:new Date().toISOString()}).eq('id', parseInt(sel.dataset.akpick,10));
+  if(error){ alert('Gagal mencocokkan: '+error.message); return; }
+  await loadAllData(); renderAll(); logActivity('update','bank_statement_lines','Cocokkan manual');
+});
+
+// ---------- Cek konsistensi ----------
+function renderAkChecks(){
+  const checks = akConsistency(data, financialTotals(), paidFor);
+  document.getElementById('akCheckTable').innerHTML = checks.map(c=>`<tr><td>${c.label}</td><td class="right">${akFmt(c.ledger)}</td><td class="right">${akFmt(c.app)}</td><td>${c.ok?'<span class="pill pill-green">Cocok</span>':'<span class="pill pill-red">Selisih '+akFmt(c.ledger-c.app)+'</span>'}</td></tr>`).join('');
+}
+
+// ---------- Hapus (khusus Owner) + periode + export ----------
+document.getElementById('view-akuntansi').addEventListener('click', async (e)=>{
+  const t = e.target;
+  const del = t.closest('[data-akdel]');
+  if(del){
+    if(!akIsOwner()){ alert('Hanya Owner yang boleh menghapus.'); return; }
+    const kind = del.dataset.akdel, id = del.dataset.id;
+    const cfg = {
+      journal: ['journal_entries','Hapus jurnal manual ini?', parseInt(id,10)],
+      coa: ['coa_accounts','Hapus akun ini?', id],
+      map: ['category_map','Hapus pemetaan ini?', parseInt(id,10)],
+      invoice: ['invoices','Hapus faktur ini beserta seluruh pembayarannya?', parseInt(id,10)],
+      invpay: ['invoice_payments','Hapus pembayaran faktur ini?', parseInt(id,10)],
+      bsl: ['bank_statement_lines','Hapus baris rekening koran ini?', parseInt(id,10)]
+    }[kind];
+    if(!cfg || !confirm(cfg[1])) return;
+    const col = kind==='coa' ? 'code' : 'id';
+    const { error } = await sb.from(cfg[0]).delete().eq(col, cfg[2]);
+    if(error){ alert('Gagal menghapus: '+error.message); return; }
+    if(kind==='invoice' && akState.payInvoiceId===cfg[2]) akState.payInvoiceId = null;
+    await loadAllData(); renderAll(); logActivity('delete', cfg[0], `${kind} ${id}`);
+    return;
+  }
+  const pay = t.closest('[data-akpay]'); if(pay){ akOpenPayCard(parseInt(pay.dataset.akpay,10)); return; }
+  const hist = t.closest('[data-akhist]'); if(hist){ akOpenPayCard(parseInt(hist.dataset.akhist,10)); return; }
+  const un = t.closest('[data-akunmatch]');
+  if(un){
+    const { error } = await sb.from('bank_statement_lines').update({matched_type:null, matched_id:null, matched_at:null}).eq('id', parseInt(un.dataset.akunmatch,10));
+    if(!error){ await loadAllData(); renderAll(); }
+    return;
+  }
+  const adj = t.closest('[data-akadj]');
+  if(adj){
+    const b = (data.bankLines||[]).find(x=>x.id===parseInt(adj.dataset.akadj,10)); if(!b) return;
+    const bankAcct = akBankAccount(b.bank);
+    const other = b.direction==='masuk' ? '4-2000' : '6-1900';
+    if(!confirm(`Buat jurnal penyesuaian untuk baris ini?\n\n${b.direction==='masuk' ? 'Debit '+bankAcct+' / Kredit '+other+' (Pendapatan Lain-lain)' : 'Debit '+other+' (Beban Operasional Lainnya) / Kredit '+bankAcct}\nNominal ${formatCurrency(b.amount)}\n\nGunakan ini untuk biaya admin bank, bunga, atau mutasi yang belum tercatat. Untuk transaksi biasa, catat lewat tab Transaksi.`)) return;
+    try{
+      const lines = b.direction==='masuk' ? [{account_code:bankAcct,debit:b.amount,credit:0},{account_code:other,debit:0,credit:b.amount}] : [{account_code:other,debit:b.amount,credit:0},{account_code:bankAcct,debit:0,credit:b.amount}];
+      const { data: newId, error } = await sb.rpc('post_journal', { p_date:b.date, p_ref:'REKON-'+b.id, p_description:`Penyesuaian rekonsiliasi bank ${b.bank}: ${b.description||''}`, p_user:currentUsername, p_lines:lines });
+      if(error) throw error;
+      const { error: e2 } = await sb.from('bank_statement_lines').update({matched_type:'journal', matched_id:newId, matched_at:new Date().toISOString()}).eq('id', b.id);
+      if(e2) throw e2;
+      await loadAllData(); renderAll(); logActivity('create','journal_entries',`Jurnal penyesuaian rekonsiliasi ${b.bank} ${formatCurrency(b.amount)}`);
+    }catch(err){ alert('Gagal: '+(err.message||err)); }
+    return;
+  }
+});
+document.getElementById('akFrom').addEventListener('change', renderAkReports);
+document.getElementById('akTo').addEventListener('change', renderAkReports);
+document.getElementById('akThisMonthBtn').addEventListener('click', ()=>{ akSetThisMonth(); renderAkReports(); });
+document.getElementById('akAllBtn').addEventListener('click', ()=>{ document.getElementById('akFrom').value=''; document.getElementById('akTo').value=''; renderAkReports(); });
+
+function akExportExcel(){
+  const m = akReportModel(); const wb = XLSX.utils.book_new();
+  const lrRows = [];
+  const sec = (title, rows, total, tl)=>{ lrRows.push({Pos:title,'Jumlah (Rp)':''}); rows.forEach(r=>lrRows.push({Pos:'  '+r.name,'Jumlah (Rp)':r.amount})); lrRows.push({Pos:tl,'Jumlah (Rp)':total}); };
+  sec('Pendapatan', m.lr.pendapatan, m.lr.totalPendapatan, 'Total pendapatan');
+  sec('Beban pokok', m.lr.bebanPokok, m.lr.totalPokok, 'Total beban pokok');
+  lrRows.push({Pos:'Laba kotor','Jumlah (Rp)':m.lr.labaKotor});
+  sec('Beban operasional', m.lr.bebanOps, m.lr.totalOps, 'Total beban operasional');
+  lrRows.push({Pos:'LABA (RUGI) BERSIH','Jumlah (Rp)':m.lr.labaBersih});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lrRows), 'Laba Rugi');
+  const nrRows = [];
+  const sec2 = (title, rows, tl, total)=>{ nrRows.push({Pos:title,'Jumlah (Rp)':''}); rows.forEach(r=>nrRows.push({Pos:'  '+r.name,'Jumlah (Rp)':r.amount})); if(tl) nrRows.push({Pos:tl,'Jumlah (Rp)':total}); };
+  sec2('Aset', m.nr.aset, 'Total aset', m.nr.totalAset);
+  sec2('Kewajiban', m.nr.kewajiban, 'Total kewajiban', m.nr.totalKewajiban);
+  sec2('Ekuitas', m.nr.ekuitas); nrRows.push({Pos:'  Laba (rugi) berjalan','Jumlah (Rp)':m.nr.laba}); nrRows.push({Pos:'Total ekuitas','Jumlah (Rp)':m.nr.totalEkuitas});
+  nrRows.push({Pos:'Total kewajiban + ekuitas','Jumlah (Rp)':m.nr.totalKewajiban+m.nr.totalEkuitas});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(nrRows), 'Neraca');
+  const cfRows = [{Pos:'Saldo kas awal','Jumlah (Rp)':m.cf.opening}];
+  Object.keys(m.cf.groups).forEach(g=>{ m.cf.groups[g].rows.forEach(r=>cfRows.push({Pos:'['+g+'] '+r.label,'Jumlah (Rp)':r.amount})); });
+  cfRows.push({Pos:'Kenaikan (penurunan) kas','Jumlah (Rp)':m.cf.net}); cfRows.push({Pos:'Saldo kas akhir','Jumlah (Rp)':m.cf.closing});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cfRows), 'Arus Kas');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(m.tb.rows.map(r=>({Kode:r.code, Akun:r.name, Debit:r.debit, Kredit:r.credit}))), 'Neraca Saldo');
+  const jr = []; m.entries.forEach(e=>e.lines.forEach(l=>jr.push({Tanggal:e.date, Bukti:e.ref, Keterangan:e.desc, Sumber:e.source, Akun:l.a+' '+akAccName(data,l.a), Debit:l.d, Kredit:l.k})));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(jr), 'Jurnal');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((data.invoices||[]).map(v=>{ const s=akInvStatus(v); return {No:v.number, Jenis:v.type, Pihak:v.party, Tanggal:v.date, 'Jatuh tempo':v.due_date||'', Nominal:v.amount, Terbayar:s.paid, Sisa:s.left, Status:s.label}; })), 'Faktur');
+  XLSX.writeFile(wb, `Laporan-Akuntansi-${m.to||akToday()}.xlsx`);
+}
+function akExportPdf(){
+  const m = akReportModel(); const { jsPDF } = window.jspdf; const doc = new jsPDF();
+  const period = `${m.from||'awal'} s.d. ${m.to||akToday()}`;
+  const tbl = (title, body, startY)=>{ doc.setFontSize(12); doc.text(title, 14, startY); doc.autoTable({startY: startY+3, head:[['Pos','Jumlah']], body, theme:'grid', headStyles:{fillColor:[42,120,214]}, columnStyles:{1:{halign:'right'}}}); return doc.lastAutoTable.finalY + 10; };
+  doc.setFontSize(15); doc.text('Laporan Keuangan (dari Buku Besar)', 14, 16); doc.setFontSize(9); doc.text('Periode: '+period, 14, 22);
+  const lrBody = [['Pendapatan',''], ...m.lr.pendapatan.map(r=>['  '+r.name, akFmt(r.amount)]), ['Total pendapatan', akFmt(m.lr.totalPendapatan)],
+    ['Beban pokok',''], ...m.lr.bebanPokok.map(r=>['  '+r.name, akFmt(r.amount)]), ['Laba kotor', akFmt(m.lr.labaKotor)],
+    ['Beban operasional',''], ...m.lr.bebanOps.map(r=>['  '+r.name, akFmt(r.amount)]), ['Total beban operasional', akFmt(m.lr.totalOps)], ['LABA (RUGI) BERSIH', akFmt(m.lr.labaBersih)]];
+  let y = tbl('Laporan Laba Rugi', lrBody, 30);
+  const nrBody = [['Aset',''], ...m.nr.aset.map(r=>['  '+r.name, akFmt(r.amount)]), ['Total aset', akFmt(m.nr.totalAset)],
+    ['Kewajiban',''], ...m.nr.kewajiban.map(r=>['  '+r.name, akFmt(r.amount)]), ['Total kewajiban', akFmt(m.nr.totalKewajiban)],
+    ['Ekuitas',''], ...m.nr.ekuitas.map(r=>['  '+r.name, akFmt(r.amount)]), ['  Laba (rugi) berjalan', akFmt(m.nr.laba)], ['Total ekuitas', akFmt(m.nr.totalEkuitas)], ['Total kewajiban + ekuitas', akFmt(m.nr.totalKewajiban+m.nr.totalEkuitas)]];
+  doc.addPage(); y = tbl('Neraca per '+(m.to||akToday()), nrBody, 16);
+  const cfBody = [['Saldo kas awal', akFmt(m.cf.opening)]]; Object.keys(m.cf.groups).forEach(g=>m.cf.groups[g].rows.forEach(r=>cfBody.push(['['+g+'] '+r.label, akFmt(r.amount)])));
+  cfBody.push(['Kenaikan (penurunan) kas', akFmt(m.cf.net)], ['Saldo kas akhir', akFmt(m.cf.closing)]);
+  doc.addPage(); tbl('Laporan Arus Kas — '+period, cfBody, 16);
+  doc.save(`Laporan-Akuntansi-${m.to||akToday()}.pdf`);
+}
+document.getElementById('akExportXlsBtn').addEventListener('click', akExportExcel);
+document.getElementById('akExportPdfBtn').addEventListener('click', akExportPdf);
+
+// Validasi global: tidak ada kolom angka yang boleh diisi minus (mencegah ketik "-" / "e")
+document.addEventListener('keydown', (e)=>{
+  if(e.target && e.target.type==='number' && (e.key==='-' || e.key==='e' || e.key==='E')) e.preventDefault();
+});
+document.querySelectorAll('input[type=number]').forEach(i=>{ if(!i.hasAttribute('min')) i.min = '0'; });
+document.addEventListener('input', (e)=>{
+  const el = e.target;
+  if(el && el.type==='number' && el.value !== '' && parseFloat(el.value) < 0) el.value = '';
+});
+// ==== AKUNTANSI UI END ====
 
 // ---------- Init ----------
 (async function init(){
