@@ -1,4 +1,4 @@
-const CACHE_NAME = 'keuangan-app-shell-v1';
+const CACHE_NAME = 'keuangan-app-shell-v2';
 const SHELL_FILES = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
