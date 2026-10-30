@@ -177,6 +177,13 @@
   </div>
 
   <div class="view active" id="view-dashboard">
+    <div class="subtabs" id="dashSubtabs">
+      <button class="subtab active" data-subview="dash-ringkasan">Ringkasan</button>
+      <button class="subtab" data-subview="dash-harian">Harian</button>
+      <button class="subtab" data-subview="dash-bulanan">Bulanan</button>
+      <button class="subtab" data-subview="dash-tahunan">Tahunan</button>
+    </div>
+    <div class="subview active" id="subview-dash-ringkasan">
     <div class="grid grid-4" id="dashMetrics"></div>
     <div class="grid grid-2" id="dashPaymentBreakdown" style="margin-top:16px;"></div>
     <div class="grid grid-2" style="margin-top:16px;">
@@ -192,6 +199,49 @@
     <div class="card owner-only" id="dashRatiosCard" style="margin-top:16px;">
       <h3>Rasio keuangan</h3>
       <div class="grid grid-3" id="dashRatios"></div>
+    </div>
+    </div>
+
+    <div class="subview" id="subview-dash-harian">
+      <div class="card">
+        <div class="flex-between">
+          <h3 style="margin:0;">Laporan harian</h3>
+          <div class="export-row"><button class="ghost" data-dpexp="xls" data-gran="day">Export Excel</button><button class="ghost" data-dpexp="pdf" data-gran="day">Export PDF</button></div>
+        </div>
+        <div class="form-grid" style="margin-top:12px;">
+          <div><label class="helper">Dari tanggal</label><input type="date" id="dpDayFrom"></div>
+          <div><label class="helper">Sampai tanggal</label><input type="date" id="dpDayTo"></div>
+          <div style="display:flex; gap:6px; align-items:flex-end;"><button class="ghost" id="dpDayMonthBtn">Bulan ini</button><button class="ghost" id="dpDayAllBtn">Semua</button></div>
+        </div>
+        <p class="helper" id="dpHelp-day"></p>
+        <div id="dpCheck-day"></div>
+        <div style="overflow-x:auto; margin-top:8px;"><table><thead id="dpHead-day"></thead><tbody id="dpBody-day"></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="subview" id="subview-dash-bulanan">
+      <div class="card">
+        <div class="flex-between">
+          <h3 style="margin:0;">Laporan bulanan</h3>
+          <div class="export-row"><button class="ghost" data-dpexp="xls" data-gran="month">Export Excel</button><button class="ghost" data-dpexp="pdf" data-gran="month">Export PDF</button></div>
+        </div>
+        <div class="form-grid" style="margin-top:12px;"><div><label class="helper">Tahun</label><select id="dpMonthYear"></select></div></div>
+        <p class="helper" id="dpHelp-month"></p>
+        <div id="dpCheck-month"></div>
+        <div style="overflow-x:auto; margin-top:8px;"><table><thead id="dpHead-month"></thead><tbody id="dpBody-month"></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="subview" id="subview-dash-tahunan">
+      <div class="card">
+        <div class="flex-between">
+          <h3 style="margin:0;">Laporan tahunan</h3>
+          <div class="export-row"><button class="ghost" data-dpexp="xls" data-gran="year">Export Excel</button><button class="ghost" data-dpexp="pdf" data-gran="year">Export PDF</button></div>
+        </div>
+        <p class="helper" id="dpHelp-year"></p>
+        <div id="dpCheck-year"></div>
+        <div style="overflow-x:auto; margin-top:8px;"><table><thead id="dpHead-year"></thead><tbody id="dpBody-year"></tbody></table></div>
+      </div>
     </div>
   </div>
 
@@ -1668,8 +1718,8 @@ function startEditTransaction(tx){
   document.getElementById('addTransBtn').textContent = 'Simpan perubahan';
   document.getElementById('cancelEditTransBtn').style.display = '';
 
-  document.querySelectorAll('.subtab').forEach(x=>x.classList.remove('active'));
-  document.querySelectorAll('.subview').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('#view-transaksi .subtab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('#view-transaksi .subview').forEach(x=>x.classList.remove('active'));
   document.querySelector('.subtab[data-subview="baru"]').classList.add('active');
   document.getElementById('subview-baru').classList.add('active');
 }
@@ -2258,8 +2308,131 @@ document.getElementById('addHolidayBtn').addEventListener('click', async ()=>{
   logActivity('create', 'holidays', `Hari libur ${date}${name?' - '+name:''}`);
 });
 
+
+// ---------- Dashboard: laporan Harian / Bulanan / Tahunan ----------
+// Memakai financialTotals() yang SAMA dengan Ringkasan (data difilter per periode), jadi angkanya selalu sinkron.
+function financialTotalsFor(txs, svs){
+  const t0 = data.transactions, s0 = data.savings;
+  try{ data.transactions = txs; data.savings = svs; return financialTotals(); }
+  finally{ data.transactions = t0; data.savings = s0; }
+}
+const DP_CFG = {
+  day:   { label:'Tanggal', key: d=>d, fmt: k=>{ const dt=new Date(k+'T00:00:00'); return dt.toLocaleDateString('id-ID',{weekday:'short',day:'numeric',month:'short',year:'numeric'}); } },
+  month: { label:'Bulan', key: d=>d.slice(0,7), fmt: k=>monthLabel(k) },
+  year:  { label:'Tahun', key: d=>d.slice(0,4), fmt: k=>k }
+};
+const dpOpen = { day:new Set(), month:new Set(), year:new Set() };
+let dpRowsCache = {};
+function dpRange(gran){
+  if(gran==='day'){ return { from: document.getElementById('dpDayFrom').value || null, to: document.getElementById('dpDayTo').value || null }; }
+  if(gran==='month'){ const y = document.getElementById('dpMonthYear').value; return y ? { from:y+'-01-01', to:y+'-12-31' } : { from:null, to:null }; }
+  return { from:null, to:null };
+}
+function dpBuild(gran){
+  const cfg = DP_CFG[gran], {from,to} = dpRange(gran);
+  const inRange = d => (!from || d >= from) && (!to || d <= to);
+  const txBy = {}, svBy = {};
+  data.transactions.filter(t=>inRange(t.date)).forEach(t=>{ (txBy[cfg.key(t.date)] = txBy[cfg.key(t.date)] || []).push(t); });
+  data.savings.filter(x=>inRange(x.date)).forEach(x=>{ (svBy[cfg.key(x.date)] = svBy[cfg.key(x.date)] || []).push(x); });
+  const keys = [...new Set([...Object.keys(txBy), ...Object.keys(svBy)])].sort().reverse();
+  const rows = keys.map(k=>{
+    const txs = txBy[k] || [], svs = svBy[k] || [];
+    const f = financialTotalsFor(txs, svs);
+    return { key:k, label:cfg.fmt(k), txs, svs, count:txs.length,
+      masuk: txs.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0), keluar: Math.abs(txs.filter(t=>t.amount<0).reduce((a,t)=>a+t.amount,0)),
+      pendapatan:f.totalIncome, pengeluaran:f.totalExpense, laba:f.netProfit, kas:f.cashBalance, cashMasuk:f.cashIncome, trfMasuk:f.transferIncome };
+  });
+  const filteredTx = data.transactions.filter(t=>inRange(t.date)), filteredSv = data.savings.filter(x=>inRange(x.date));
+  return { rows, total: financialTotalsFor(filteredTx, filteredSv), from, to };
+}
+function dpDetailHtml(r, cols){
+  const txs = [...r.txs].sort((a,b)=> a.date.localeCompare(b.date) || a.id - b.id).slice(0,500);
+  let h = '<div style="padding:6px 4px 10px;">';
+  h += `<table><thead><tr><th>Tanggal</th><th>Deskripsi</th><th>Kategori</th><th>Metode</th><th class="right">Jumlah</th><th>Oleh</th></tr></thead><tbody>` +
+    (txs.map(t=>`<tr><td>${t.date}</td><td>${escapeHtml(t.description||'')}</td><td>${escapeHtml(t.category||'-')}</td><td>${escapeHtml(formatPaymentMethodText(t))}</td><td class="right ${t.amount>=0?'income':'expense'}">${formatCurrency(t.amount)}</td><td>${escapeHtml(t.created_by||'-')}</td></tr>`).join('') || `<tr><td colspan="6" class="empty" style="padding:10px;">Tidak ada transaksi</td></tr>`) + '</tbody></table>';
+  if(r.txs.length > 500) h += '<p class="helper">Menampilkan 500 transaksi pertama.</p>';
+  if(r.svs.length){
+    h += `<p class="helper" style="margin:10px 0 4px;"><b>Mutasi tabungan pada periode ini</b></p><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Catatan</th><th class="right">Jumlah</th></tr></thead><tbody>` +
+      [...r.svs].sort((a,b)=>a.date.localeCompare(b.date)).map(x=>`<tr><td>${x.date}</td><td>${escapeHtml(x.jenis)}</td><td>${escapeHtml(x.notes||'')}</td><td class="right ${x.amount>=0?'income':'expense'}">${formatCurrency(x.amount)}</td></tr>`).join('') + '</tbody></table>';
+  }
+  return h + '</div>';
+}
+function renderDashPeriod(gran){
+  const head = document.getElementById('dpHead-'+gran); if(!head) return;
+  const owner = currentRole === 'owner';
+  const {rows, total, from, to} = dpBuild(gran);
+  dpRowsCache[gran] = rows;
+  const cols = 9 + (owner ? 1 : 0);
+  head.innerHTML = `<tr><th>${DP_CFG[gran].label}</th><th class="right">Trx</th><th class="right">Masuk (semua)</th><th class="right">Keluar (semua)</th><th class="right">Pendapatan</th><th class="right">Pengeluaran</th>${owner?'<th class="right">Laba</th>':''}<th class="right">Δ Kas</th><th class="right">Cash masuk</th><th class="right">Transfer masuk</th></tr>`;
+  const sum = (f)=>rows.reduce((a,r)=>a+f(r),0);
+  const num = (v,cls)=>`<td class="right ${cls||''}">${formatCurrency(v)}</td>`;
+  const bodyRows = rows.map(r=>{
+    const open = dpOpen[gran].has(r.key);
+    return `<tr data-dpkey="${r.key}" data-gran="${gran}" style="cursor:pointer;${open?'background:var(--bg);':''}">
+      <td><b>${open?'▾':'▸'}</b> ${escapeHtml(r.label)}</td><td class="right">${r.count}</td>${num(r.masuk)}${num(r.keluar)}${num(r.pendapatan)}${num(r.pengeluaran)}${owner?num(r.laba, r.laba>=0?'income':'expense'):''}${num(r.kas, r.kas>=0?'':'expense')}${num(r.cashMasuk)}${num(r.trfMasuk)}</tr>` +
+      (open ? `<tr><td colspan="${cols}" style="background:var(--bg);">${dpDetailHtml(r)}</td></tr>` : '');
+  }).join('');
+  const totalRow = rows.length ? `<tr style="background:var(--bg); font-weight:600;"><td>Total</td><td class="right">${sum(r=>r.count)}</td>${num(sum(r=>r.masuk))}${num(sum(r=>r.keluar))}${num(sum(r=>r.pendapatan))}${num(sum(r=>r.pengeluaran))}${owner?num(sum(r=>r.laba)):''}${num(sum(r=>r.kas))}${num(sum(r=>r.cashMasuk))}${num(sum(r=>r.trfMasuk))}</tr>` : '';
+  document.getElementById('dpBody-'+gran).innerHTML = (bodyRows + totalRow) || `<tr><td colspan="${cols}" class="empty">Belum ada transaksi pada rentang ini</td></tr>`;
+  // Pemeriksaan silang dengan perhitungan Ringkasan (angka total periode yang sama)
+  const diffs = [];
+  if(Math.abs(sum(r=>r.pendapatan) - total.totalIncome) > 1) diffs.push('Pendapatan');
+  if(Math.abs(sum(r=>r.pengeluaran) - total.totalExpense) > 1) diffs.push('Pengeluaran');
+  if(Math.abs(sum(r=>r.kas) - total.cashBalance) > 1) diffs.push('Δ Kas');
+  document.getElementById('dpCheck-'+gran).innerHTML = diffs.length
+    ? `<span class="pill pill-red">Selisih terdeteksi di: ${diffs.join(', ')}</span>`
+    : `<span class="pill pill-green">Total semua baris cocok dengan perhitungan Ringkasan</span>`;
+  document.getElementById('dpHelp-'+gran).innerHTML = `Klik baris untuk melihat <b>semua transaksi</b> pada periode itu. <b>Masuk/Keluar (semua)</b> = jumlah mentah seluruh transaksi (termasuk pinjaman, service, voucher). <b>Pendapatan/Pengeluaran${owner?'/Laba':''}</b> = angka yang dihitung sama seperti Ringkasan. <b>Δ Kas</b> = perubahan saldo kas pada periode itu.`;
+}
+function renderDashPeriods(){
+  const yearSel = document.getElementById('dpMonthYear');
+  if(yearSel){
+    const cur = yearSel.value;
+    const years = [...new Set(data.transactions.map(t=>t.date.slice(0,4)))].sort().reverse();
+    yearSel.innerHTML = '<option value="">Semua tahun</option>' + years.map(y=>`<option value="${y}">${y}</option>`).join('');
+    if(cur && years.includes(cur)) yearSel.value = cur;
+  }
+  if(!renderDashPeriods._init){
+    const t = new Date().toISOString().slice(0,10);
+    document.getElementById('dpDayFrom').value = t.slice(0,8)+'01'; document.getElementById('dpDayTo').value = t;
+    renderDashPeriods._init = true;
+  }
+  ['day','month','year'].forEach(renderDashPeriod);
+}
+['dpDayFrom','dpDayTo','dpMonthYear'].forEach(id=>document.getElementById(id).addEventListener('change', ()=>renderDashPeriods()));
+document.getElementById('dpDayMonthBtn').addEventListener('click', ()=>{ const t=new Date().toISOString().slice(0,10); document.getElementById('dpDayFrom').value=t.slice(0,8)+'01'; document.getElementById('dpDayTo').value=t; renderDashPeriods(); });
+document.getElementById('dpDayAllBtn').addEventListener('click', ()=>{ document.getElementById('dpDayFrom').value=''; document.getElementById('dpDayTo').value=''; renderDashPeriods(); });
+document.getElementById('view-dashboard').addEventListener('click', (e)=>{
+  const exp = e.target.closest('[data-dpexp]');
+  if(exp){ dpExport(exp.dataset.gran, exp.dataset.dpexp); return; }
+  const tr = e.target.closest('tr[data-dpkey]'); if(!tr) return;
+  const set = dpOpen[tr.dataset.gran];
+  if(set.has(tr.dataset.dpkey)) set.delete(tr.dataset.dpkey); else set.add(tr.dataset.dpkey);
+  renderDashPeriod(tr.dataset.gran);
+});
+function dpExport(gran, kind){
+  const rows = dpRowsCache[gran] || []; const owner = currentRole === 'owner';
+  const name = {day:'Harian', month:'Bulanan', year:'Tahunan'}[gran];
+  const {from,to} = dpRange(gran);
+  const sumRow = {};
+  if(kind === 'xls'){
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map(r=>{ const o = { [DP_CFG[gran].label]:r.key, 'Jumlah transaksi':r.count, 'Masuk semua (Rp)':r.masuk, 'Keluar semua (Rp)':r.keluar, 'Pendapatan (Rp)':r.pendapatan, 'Pengeluaran (Rp)':r.pengeluaran }; if(owner) o['Laba (Rp)']=r.laba; o['Perubahan kas (Rp)']=r.kas; o['Cash masuk (Rp)']=r.cashMasuk; o['Transfer masuk (Rp)']=r.trfMasuk; return o; })), 'Rekap '+name);
+    const detail = []; rows.slice().reverse().forEach(r=>r.txs.slice().sort((a,b)=>a.date.localeCompare(b.date)||a.id-b.id).forEach(t=>detail.push({ Periode:r.key, Tanggal:t.date, Deskripsi:t.description, Kategori:t.category||'', Metode:formatPaymentMethodText(t), 'Jumlah (Rp)':t.amount, 'Dicatat oleh':t.created_by||'' })));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detail), 'Semua transaksi');
+    XLSX.writeFile(wb, `Laporan-${name}-${new Date().toISOString().slice(0,10)}.xlsx`);
+  } else {
+    const { jsPDF } = window.jspdf; const doc = new jsPDF({orientation:'landscape'});
+    doc.setFontSize(14); doc.text(`Laporan ${name}`, 14, 14); doc.setFontSize(9); doc.text(`Periode: ${from||'awal'} s.d. ${to||'sekarang'} · dicetak ${new Date().toISOString().slice(0,10)}`, 14, 20);
+    const head = [DP_CFG[gran].label, 'Trx', 'Masuk (semua)', 'Keluar (semua)', 'Pendapatan', 'Pengeluaran', ...(owner?['Laba']:[]), 'Δ Kas', 'Cash masuk', 'Transfer masuk'];
+    const body = rows.map(r=>[r.key, r.count, formatCurrency(r.masuk), formatCurrency(r.keluar), formatCurrency(r.pendapatan), formatCurrency(r.pengeluaran), ...(owner?[formatCurrency(r.laba)]:[]), formatCurrency(r.kas), formatCurrency(r.cashMasuk), formatCurrency(r.trfMasuk)]);
+    doc.autoTable({ startY: 25, head:[head], body, theme:'grid', styles:{fontSize:8}, headStyles:{fillColor:[42,120,214]}, columnStyles:{1:{halign:'right'}} });
+    doc.save(`Laporan-${name}-${new Date().toISOString().slice(0,10)}.pdf`);
+  }
+}
+
 function renderAll(){
-  renderDashboard(); renderTransactions(); renderLaporan(); renderReceivables(); renderPayables(); renderKasbon(); renderRekomendasiPelunasan(); renderBudgets(); renderPayroll(); renderSavings(); renderProjection(); renderAkuntansi(); fillLinkedRecordOptions();
+  renderDashboard(); renderTransactions(); renderLaporan(); renderReceivables(); renderPayables(); renderKasbon(); renderRekomendasiPelunasan(); renderBudgets(); renderPayroll(); renderSavings(); renderProjection(); renderAkuntansi(); fillLinkedRecordOptions(); renderDashPeriods();
   if(currentRole === 'owner'){ renderComparison(); renderUsers(); }
 }
 
