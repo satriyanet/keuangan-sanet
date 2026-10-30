@@ -443,6 +443,15 @@
         </div>
       </div>
       <div class="card" style="margin-top:16px;">
+        <h3>Rekap piutang per pelanggan</h3>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Pelanggan</th><th class="right">Jumlah transaksi</th><th class="right">Total pinjaman</th><th class="right">Terbayar</th><th class="right">Total sisa</th></tr></thead>
+            <tbody id="arSummary"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px;">
         <h3>Daftar piutang</h3>
         <div style="overflow-x:auto;">
           <table>
@@ -490,6 +499,15 @@
           <input type="number" id="apAmount" placeholder="Jumlah utang (Rp)">
           <input type="text" id="apNotes" placeholder="Catatan (opsional)">
           <button class="primary" id="addAPBtn">Tambah</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <h3>Rekap utang per pihak</h3>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Nama</th><th class="right">Jumlah transaksi</th><th class="right">Total pinjaman</th><th class="right">Terbayar</th><th class="right">Total sisa</th></tr></thead>
+            <tbody id="apSummary"></tbody>
+          </table>
         </div>
       </div>
       <div class="card" style="margin-top:16px;">
@@ -546,6 +564,15 @@
           <button class="primary" id="addKasbonBtn">Tambah</button>
         </div>
         <p class="helper" style="margin-top:6px;">Kasbon otomatis tercatat sebagai pengeluaran kas (tanpa mempengaruhi Laba Bersih, karena berupa piutang ke karyawan, bukan beban).</p>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <h3>Rekap kasbon per karyawan</h3>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Karyawan</th><th class="right">Jumlah transaksi</th><th class="right">Total pinjaman</th><th class="right">Terbayar</th><th class="right">Total sisa</th></tr></thead>
+            <tbody id="kbSummary"></tbody>
+          </table>
+        </div>
       </div>
       <div class="card" style="margin-top:16px;">
         <h3>Daftar kasbon</h3>
@@ -1675,6 +1702,21 @@ function openPayForm_(kind, id, name){
   }
 }
 
+function renderNameSummary(tbodyId, rows, nameField, payments, idField, emptyText){
+  const g = {};
+  rows.forEach(r=>{
+    const key = (r[nameField]||'-').trim().toLowerCase();
+    const x = g[key] || (g[key] = {name:(r[nameField]||'-').trim(), n:0, total:0, paid:0});
+    x.n++; x.total += r.amount; x.paid += paidFor(payments, idField, r.id);
+  });
+  const list = Object.values(g).map(x=>({...x, left:x.total-x.paid})).sort((a,b)=>b.left-a.left);
+  const tb = document.getElementById(tbodyId);
+  if(!tb) return;
+  tb.innerHTML = list.length ? list.map(x=>`<tr><td>${escapeHtml(x.name)}</td><td class="right">${x.n}</td><td class="right">${formatCurrency(x.total)}</td><td class="right" style="color:var(--green);">${formatCurrency(x.paid)}</td><td class="right" style="font-weight:600;${x.left>0?'':'color:var(--muted);'}">${formatCurrency(x.left)}</td></tr>`).join('')
+    + `<tr style="background:var(--bg);"><td><b>Total</b></td><td class="right"><b>${rows.length}</b></td><td class="right"><b>${formatCurrency(list.reduce((s,x)=>s+x.total,0))}</b></td><td class="right"><b>${formatCurrency(list.reduce((s,x)=>s+x.paid,0))}</b></td><td class="right"><b>${formatCurrency(list.reduce((s,x)=>s+x.left,0))}</b></td></tr>`
+    : `<tr><td colspan="5" class="empty">${emptyText}</td></tr>`;
+}
+
 function renderReceivables(){
   const arTbody = document.getElementById('arTable');
   const sorted = [...data.receivables].sort((a,b)=> (b.date||'').localeCompare(a.date||''));
@@ -1695,6 +1737,7 @@ function renderReceivables(){
   }).join('') : '<tr><td colspan="7" class="empty">Belum ada piutang</td></tr>';
   const totalRemaining = data.receivables.reduce((s,r)=> s + (r.amount - paidFor(data.receivablePayments,'receivable_id',r.id)), 0);
   document.getElementById('arTotal').textContent = formatCurrency(totalRemaining);
+  renderNameSummary('arSummary', data.receivables, 'name', data.receivablePayments, 'receivable_id', 'Belum ada piutang');
 
   const payTbody = document.getElementById('arPaymentsTable');
   const sortedPayments = [...data.receivablePayments].sort((a,b)=> b.date.localeCompare(a.date));
@@ -1725,6 +1768,7 @@ function renderPayables(){
   }).join('') : '<tr><td colspan="7" class="empty">Belum ada utang</td></tr>';
   const totalRemaining = data.payables.reduce((s,p)=> s + (p.amount - paidFor(data.payablePayments,'payable_id',p.id)), 0);
   document.getElementById('apTotal').textContent = formatCurrency(totalRemaining);
+  renderNameSummary('apSummary', data.payables, 'name', data.payablePayments, 'payable_id', 'Belum ada utang');
 
   const payTbody = document.getElementById('apPaymentsTable');
   const sortedPayments = [...data.payablePayments].sort((a,b)=> b.date.localeCompare(a.date));
@@ -1755,6 +1799,7 @@ function renderKasbon(){
   }).join('') : '<tr><td colspan="7" class="empty">Belum ada kasbon</td></tr>';
   const totalRemaining = data.kasbon.reduce((s,k)=> s + (k.amount - paidFor(data.kasbonPayments,'kasbon_id',k.id)), 0);
   document.getElementById('kbTotal').textContent = formatCurrency(totalRemaining);
+  renderNameSummary('kbSummary', data.kasbon, 'employee_name', data.kasbonPayments, 'kasbon_id', 'Belum ada kasbon');
 
   const payTbody = document.getElementById('kbPaymentsTable');
   const sortedPayments = [...data.kasbonPayments].sort((a,b)=> b.date.localeCompare(a.date));
