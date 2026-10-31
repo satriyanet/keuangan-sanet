@@ -279,6 +279,13 @@
             <option value="hutang" id="tPaymentHutangOpt">Hutang baru (uang dipinjam)</option>
             <option value="terima_piutang" id="tPaymentTerimaPiutangOpt">Terima pembayaran piutang</option>
             <option value="terima_kasbon" id="tPaymentTerimaKasbonOpt">Terima pembayaran kasbon</option>
+            <option value="pindah" id="tPaymentPindahOpt">Pindah dana (kas ↔ bank, antar bank)</option>
+          </select>
+          <select id="tFromAcct" style="display:none;" aria-label="Dari akun">
+            <option value="Kas">Dari: Kas (tunai)</option><option value="BNI">Dari: Bank BNI</option><option value="BCA">Dari: Bank BCA</option><option value="BPD">Dari: Bank BPD</option><option value="Lainnya">Dari: Bank lainnya</option>
+          </select>
+          <select id="tToAcct" style="display:none;" aria-label="Ke akun">
+            <option value="BNI">Ke: Bank BNI</option><option value="BCA">Ke: Bank BCA</option><option value="BPD">Ke: Bank BPD</option><option value="Lainnya">Ke: Bank lainnya</option><option value="Kas">Ke: Kas (tunai)</option>
           </select>
           <input type="text" id="tLoanPartyName" placeholder="Nama peminjam/pemberi pinjaman" style="display:none;">
           <select id="tLinkedRecord" style="display:none;"></select>
@@ -1109,7 +1116,7 @@ const SESSION_KEY = 'finance_app_session_v1';
 let currentRole = null;
 let currentUsername = null;
 let dataLoaded = false;
-let data = { transactions: [], receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [], coa: [], journalEntries: [], journalLines: [], invoices: [], invoicePayments: [], bankLines: [], categoryMap: [] };
+let data = { transactions: [], transfers: [], receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [], coa: [], journalEntries: [], journalLines: [], invoices: [], invoicePayments: [], bankLines: [], categoryMap: [] };
 
 // ---------- Login ----------
 document.getElementById('loginBtn').addEventListener('click', handleLogin);
@@ -1267,7 +1274,9 @@ async function loadAllData(){
       sb.from('category_map').select('*').order('keyword')
     ]);
     if(t.error) throw t.error;
-    data.transactions = t.data.map(x => ({...x, amount: Number(x.amount)}));
+    const allTx = t.data.map(x => ({...x, amount: Number(x.amount)}));
+    data.transfers = allTx.filter(x => x.payment_method === 'pindah'); // pindah dana kas<->bank: tidak masuk pendapatan/pengeluaran/laba
+    data.transactions = allTx.filter(x => x.payment_method !== 'pindah');
     data.receivables = r.data.map(x => ({...x, amount: Number(x.amount)}));
     data.payables = p.data.map(x => ({...x, amount: Number(x.amount)}));
     data.budgets = b.data.map(x => ({...x, amount: Number(x.amount)}));
@@ -1332,6 +1341,7 @@ function formatCurrency(num){
   return new Intl.NumberFormat('id-ID', {style:'currency', currency:'IDR', minimumFractionDigits:0}).format(Math.round(num));
 }
 function formatPaymentMethodText(t){
+  if(t.payment_method === 'pindah') return `Pindah dana ${t.loan_party==='Kas'?'Kas':'Bank '+(t.loan_party||'?')} → ${t.bank==='Kas'?'Kas':'Bank '+(t.bank||'?')}`;
   if(t.payment_method === 'cash') return 'Cash';
   if(t.payment_method === 'transfer') return `Transfer ${t.bank||''}`.trim();
   if(t.payment_method === 'tabungan') return `Tabungan ${t.saving_type||''}`.trim() + (t.bank ? ` (dicairkan Transfer ${t.bank})` : ' (dicairkan Cash)');
@@ -1528,7 +1538,7 @@ function renderTransactions(){
   const fromDate = document.getElementById('transFilterFrom').value;
   const toDate = document.getElementById('transFilterTo').value;
 
-  let filtered = [...data.transactions];
+  let filtered = [...data.transactions, ...(data.transfers||[])];
   if(fromDate){ filtered = filtered.filter(t => t.date >= fromDate); }
   if(toDate){ filtered = filtered.filter(t => t.date <= toDate); }
   const sorted = filtered.sort((a,b)=> b.date.localeCompare(a.date));
@@ -1558,13 +1568,14 @@ function renderTransactions(){
     else if(t.payment_method === 'piutang') metode = `<span class="pill pill-green">${t.amount>=0?'Terima piutang':'Piutang baru'}${t.loan_party?': '+escapeHtml(t.loan_party):''}</span>` + (t.bank ? ` <span class="pill pill-purple">Transfer${t.bank!=='Transfer'?' '+escapeHtml(t.bank):''}</span>` : '');
     else if(t.payment_method === 'hutang') metode = `<span class="pill pill-amber">${t.amount>=0?'Hutang baru':'Bayar hutang'}${t.loan_party?': '+escapeHtml(t.loan_party):''}</span>` + (t.bank ? ` <span class="pill pill-purple">Transfer${t.bank!=='Transfer'?' '+escapeHtml(t.bank):''}</span>` : '');
     else if(t.payment_method === 'kasbon') metode = `<span class="pill pill-amber">${t.amount>=0?'Bayar kasbon':'Kasbon'}${t.loan_party?': '+escapeHtml(t.loan_party):''}</span>` + (t.bank ? ` <span class="pill pill-purple">Transfer${t.bank!=='Transfer'?' '+escapeHtml(t.bank):''}</span>` : '');
+    else if(t.payment_method === 'pindah') metode = `<span class="pill pill-purple">Pindah dana: ${escapeHtml(t.loan_party==='Kas'?'Kas':'Bank '+(t.loan_party||'?'))} → ${escapeHtml(t.bank==='Kas'?'Kas':'Bank '+(t.bank||'?'))}</span>`;
     else if(t.payment_method === 'tagihan') metode = `<span class="pill pill-red">Tagihan belum dibayar${t.loan_party?': '+escapeHtml(t.loan_party):''}</span>`;
     if(t.proof_path){ metode += ` <button class="del-btn" style="color:var(--accent);" data-action="viewProof" data-path="${escapeHtml(t.proof_path)}">Lihat bukti</button>`; }
     else if(t.proof_url){ metode += ` <a href="${t.proof_url}" target="_blank" rel="noopener" style="font-size:12px;">Lihat bukti (lama)</a>`; }
     return `
     <tr>
       <td>${t.date}</td><td>${escapeHtml(t.description)}</td><td>${escapeHtml(t.category||'-')}</td>
-      <td class="right ${t.amount>=0?'income':'expense'}">${formatCurrency(t.amount)}</td>
+      <td class="right ${t.payment_method==='pindah'?'':(t.amount>=0?'income':'expense')}">${formatCurrency(t.payment_method==='pindah'?Math.abs(t.amount):t.amount)}</td>
       <td>${metode}</td>
       <td>${escapeHtml(t.created_by||'-')}</td>
       <td class="right">
@@ -1663,6 +1674,7 @@ let editingTransactionId = null;
 // Alasan sebuah transaksi tidak boleh diubah (terhubung ke daftar Piutang/Utang/Kasbon). Kosong = boleh diubah.
 function txEditLockReason(tx){
   const id = tx.id;
+  if(tx.payment_method === 'pindah') return 'Pindah dana tidak bisa diubah. Untuk memperbaiki: hapus (Owner), lalu input ulang.';
   if(data.receivablePayments.some(p=>p.related_transaction_id===id) || data.payablePayments.some(p=>p.related_transaction_id===id) || data.kasbonPayments.some(p=>p.related_transaction_id===id))
     return 'Transaksi ini adalah pembayaran yang terhubung ke daftar Piutang/Utang/Kasbon. Untuk memperbaiki: hapus transaksinya (Owner), lalu input ulang.';
   if(tx.payment_method === 'tagihan' || data.kasbon.some(k=>k.related_transaction_id===id))
@@ -2184,14 +2196,15 @@ function dpRange(gran){
 function dpBuild(gran){
   const cfg = DP_CFG[gran], {from,to} = dpRange(gran);
   const inRange = d => (!from || d >= from) && (!to || d <= to);
-  const txBy = {}, svBy = {};
+  const txBy = {}, svBy = {}, tfBy = {};
   data.transactions.filter(t=>t.date && inRange(t.date)).forEach(t=>{ (txBy[cfg.key(t.date)] = txBy[cfg.key(t.date)] || []).push(t); });
   data.savings.filter(x=>x.date && inRange(x.date)).forEach(x=>{ (svBy[cfg.key(x.date)] = svBy[cfg.key(x.date)] || []).push(x); });
-  const keys = [...new Set([...Object.keys(txBy), ...Object.keys(svBy)])].sort().reverse();
+  (data.transfers||[]).filter(t=>t.date && inRange(t.date)).forEach(t=>{ (tfBy[cfg.key(t.date)] = tfBy[cfg.key(t.date)] || []).push(t); });
+  const keys = [...new Set([...Object.keys(txBy), ...Object.keys(svBy), ...Object.keys(tfBy)])].sort().reverse();
   const rows = keys.map(k=>{
-    const txs = txBy[k] || [], svs = svBy[k] || [];
+    const txs = txBy[k] || [], svs = svBy[k] || [], tfs = tfBy[k] || [];
     const f = financialTotalsFor(txs, svs);
-    return { key:k, label:cfg.fmt(k), txs, svs, count:txs.length,
+    return { key:k, label:cfg.fmt(k), txs, svs, tfs, count:txs.length + tfs.length, pindah: tfs.reduce((a,t)=>a+Math.abs(t.amount),0),
       masuk: txs.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0), keluar: Math.abs(txs.filter(t=>t.amount<0).reduce((a,t)=>a+t.amount,0)),
       pendapatan:f.totalIncome, pengeluaran:f.totalExpense, laba:f.netProfit, kas:f.cashBalance, cashMasuk:f.cashIncome, trfMasuk:f.transferIncome };
   });
@@ -2199,11 +2212,11 @@ function dpBuild(gran){
   return { rows, total: financialTotalsFor(filteredTx, filteredSv), from, to };
 }
 function dpDetailHtml(r, cols){
-  const txs = [...r.txs].sort((a,b)=> a.date.localeCompare(b.date) || a.id - b.id).slice(0,500);
+  const txs = [...r.txs, ...(r.tfs||[])].sort((a,b)=> a.date.localeCompare(b.date) || a.id - b.id).slice(0,500);
   let h = '<div style="padding:6px 4px 10px;">';
   h += `<table><thead><tr><th>Tanggal</th><th>Deskripsi</th><th>Kategori</th><th>Metode</th><th class="right">Jumlah</th><th>Oleh</th></tr></thead><tbody>` +
-    (txs.map(t=>`<tr><td>${t.date}</td><td>${escapeHtml(t.description||'')}</td><td>${escapeHtml(t.category||'-')}</td><td>${escapeHtml(formatPaymentMethodText(t))}</td><td class="right ${t.amount>=0?'income':'expense'}">${formatCurrency(t.amount)}</td><td>${escapeHtml(t.created_by||'-')}</td></tr>`).join('') || `<tr><td colspan="6" class="empty" style="padding:10px;">Tidak ada transaksi</td></tr>`) + '</tbody></table>';
-  if(r.txs.length > 500) h += '<p class="helper">Menampilkan 500 transaksi pertama.</p>';
+    (txs.map(t=>`<tr><td>${t.date}</td><td>${escapeHtml(t.description||'')}</td><td>${escapeHtml(t.category||'-')}</td><td>${escapeHtml(formatPaymentMethodText(t))}</td><td class="right ${t.payment_method==='pindah'?'':(t.amount>=0?'income':'expense')}">${formatCurrency(t.payment_method==='pindah'?Math.abs(t.amount):t.amount)}</td><td>${escapeHtml(t.created_by||'-')}</td></tr>`).join('') || `<tr><td colspan="6" class="empty" style="padding:10px;">Tidak ada transaksi</td></tr>`) + '</tbody></table>';
+  if(r.txs.length + (r.tfs||[]).length > 500) h += '<p class="helper">Menampilkan 500 transaksi pertama.</p>';
   if(r.svs.length){
     h += `<p class="helper" style="margin:10px 0 4px;"><b>Mutasi tabungan pada periode ini</b></p><table><thead><tr><th>Tanggal</th><th>Jenis</th><th>Catatan</th><th class="right">Jumlah</th></tr></thead><tbody>` +
       [...r.svs].sort((a,b)=>a.date.localeCompare(b.date)).map(x=>`<tr><td>${x.date}</td><td>${escapeHtml(x.jenis)}</td><td>${escapeHtml(x.notes||'')}</td><td class="right ${x.amount>=0?'income':'expense'}">${formatCurrency(x.amount)}</td></tr>`).join('') + '</tbody></table>';
@@ -2215,17 +2228,17 @@ function renderDashPeriod(gran){
   const owner = currentRole === 'owner';
   const {rows, total, from, to} = dpBuild(gran);
   dpRowsCache[gran] = rows;
-  const cols = 9 + (owner ? 1 : 0);
-  head.innerHTML = `<tr><th>${DP_CFG[gran].label}</th><th class="right">Trx</th><th class="right">Masuk (semua)</th><th class="right">Keluar (semua)</th><th class="right">Pendapatan</th><th class="right">Pengeluaran</th>${owner?'<th class="right">Laba</th>':''}<th class="right">Δ Kas</th><th class="right">Cash masuk</th><th class="right">Transfer masuk</th></tr>`;
+  const cols = 10 + (owner ? 1 : 0);
+  head.innerHTML = `<tr><th>${DP_CFG[gran].label}</th><th class="right">Trx</th><th class="right">Masuk (semua)</th><th class="right">Keluar (semua)</th><th class="right">Pendapatan</th><th class="right">Pengeluaran</th>${owner?'<th class="right">Laba</th>':''}<th class="right">Δ Kas</th><th class="right">Cash masuk</th><th class="right">Transfer masuk</th><th class="right">Pindah dana</th></tr>`;
   const sum = (f)=>rows.reduce((a,r)=>a+f(r),0);
   const num = (v,cls)=>`<td class="right ${cls||''}">${formatCurrency(v)}</td>`;
   const bodyRows = rows.map(r=>{
     const open = dpOpen[gran].has(r.key);
     return `<tr data-dpkey="${r.key}" data-gran="${gran}" style="cursor:pointer;${open?'background:var(--bg);':''}">
-      <td><b>${open?'▾':'▸'}</b> ${escapeHtml(r.label)}</td><td class="right">${r.count}</td>${num(r.masuk)}${num(r.keluar)}${num(r.pendapatan)}${num(r.pengeluaran)}${owner?num(r.laba, r.laba>=0?'income':'expense'):''}${num(r.kas, r.kas>=0?'':'expense')}${num(r.cashMasuk)}${num(r.trfMasuk)}</tr>` +
+      <td><b>${open?'▾':'▸'}</b> ${escapeHtml(r.label)}</td><td class="right">${r.count}</td>${num(r.masuk)}${num(r.keluar)}${num(r.pendapatan)}${num(r.pengeluaran)}${owner?num(r.laba, r.laba>=0?'income':'expense'):''}${num(r.kas, r.kas>=0?'':'expense')}${num(r.cashMasuk)}${num(r.trfMasuk)}${num(r.pindah)}</tr>` +
       (open ? `<tr><td colspan="${cols}" style="background:var(--bg);">${dpDetailHtml(r)}</td></tr>` : '');
   }).join('');
-  const totalRow = rows.length ? `<tr style="background:var(--bg); font-weight:600;"><td>Total</td><td class="right">${sum(r=>r.count)}</td>${num(sum(r=>r.masuk))}${num(sum(r=>r.keluar))}${num(sum(r=>r.pendapatan))}${num(sum(r=>r.pengeluaran))}${owner?num(sum(r=>r.laba)):''}${num(sum(r=>r.kas))}${num(sum(r=>r.cashMasuk))}${num(sum(r=>r.trfMasuk))}</tr>` : '';
+  const totalRow = rows.length ? `<tr style="background:var(--bg); font-weight:600;"><td>Total</td><td class="right">${sum(r=>r.count)}</td>${num(sum(r=>r.masuk))}${num(sum(r=>r.keluar))}${num(sum(r=>r.pendapatan))}${num(sum(r=>r.pengeluaran))}${owner?num(sum(r=>r.laba)):''}${num(sum(r=>r.kas))}${num(sum(r=>r.cashMasuk))}${num(sum(r=>r.trfMasuk))}${num(sum(r=>r.pindah))}</tr>` : '';
   document.getElementById('dpBody-'+gran).innerHTML = (bodyRows + totalRow) || `<tr><td colspan="${cols}" class="empty">Belum ada transaksi pada rentang ini</td></tr>`;
   // Pemeriksaan silang dengan perhitungan Ringkasan (angka total periode yang sama)
   const diffs = [];
@@ -2235,7 +2248,7 @@ function renderDashPeriod(gran){
   document.getElementById('dpCheck-'+gran).innerHTML = diffs.length
     ? `<span class="pill pill-red">Selisih terdeteksi di: ${diffs.join(', ')}</span>`
     : `<span class="pill pill-green">Total semua baris cocok dengan perhitungan Ringkasan</span>`;
-  document.getElementById('dpHelp-'+gran).innerHTML = `Klik baris untuk melihat <b>semua transaksi</b> pada periode itu. <b>Masuk/Keluar (semua)</b> = jumlah mentah seluruh transaksi (termasuk pinjaman, service, voucher). <b>Pendapatan/Pengeluaran${owner?'/Laba':''}</b> = angka yang dihitung sama seperti Ringkasan. <b>Δ Kas</b> = perubahan saldo kas pada periode itu.`;
+  document.getElementById('dpHelp-'+gran).innerHTML = `Klik baris untuk melihat <b>semua transaksi</b> pada periode itu. <b>Pindah dana</b> = perpindahan kas/bank (tidak mengubah total kas, pendapatan, atau laba). <b>Masuk/Keluar (semua)</b> = jumlah mentah seluruh transaksi (termasuk pinjaman, service, voucher). <b>Pendapatan/Pengeluaran${owner?'/Laba':''}</b> = angka yang dihitung sama seperti Ringkasan. <b>Δ Kas</b> = perubahan saldo kas pada periode itu.`;
 }
 function renderDashPeriods(){
   const yearSel = document.getElementById('dpMonthYear');
@@ -2318,7 +2331,7 @@ function bsPlan(){
   };
   const svLinked = data.savings.filter(x=>txSel.has(x.related_transaction_id));
   const svManual = data.savings.filter(x=>bsSel.sv.has(x.id) && !txSel.has(x.related_transaction_id));
-  const txs = data.transactions.filter(t=>txSel.has(t.id));
+  const txs = [...data.transactions, ...(data.transfers||[])].filter(t=>txSel.has(t.id));
   const assets = data.assets.filter(a=>bsSel.as.has(a.id));
   const journals = (data.journalEntries||[]).filter(j=>bsSel.je.has(j.id));
   const invoices = (data.invoices||[]).filter(v=>bsSel.inv.has(v.id));
@@ -2333,10 +2346,10 @@ function bsRender(){
   const wrap = document.getElementById('bsLists'); if(!wrap) return;
   if(!bsRange){ wrap.innerHTML = ''; document.getElementById('bsSummaryCard').style.display = 'none'; return; }
   // buang pilihan yang datanya sudah tidak ada (mis. berubah dari akun lain)
-  const alive = { tx:new Set(data.transactions.map(x=>x.id)), sv:new Set(data.savings.map(x=>x.id)), as:new Set(data.assets.map(x=>x.id)), je:new Set((data.journalEntries||[]).map(x=>x.id)), inv:new Set((data.invoices||[]).map(x=>x.id)), bsl:new Set((data.bankLines||[]).map(x=>x.id)) };
+  const alive = { tx:new Set([...data.transactions, ...(data.transfers||[])].map(x=>x.id)), sv:new Set(data.savings.map(x=>x.id)), as:new Set(data.assets.map(x=>x.id)), je:new Set((data.journalEntries||[]).map(x=>x.id)), inv:new Set((data.invoices||[]).map(x=>x.id)), bsl:new Set((data.bankLines||[]).map(x=>x.id)) };
   Object.keys(bsSel).forEach(k=>[...bsSel[k]].forEach(id=>{ if(!alive[k].has(id)) bsSel[k].delete(id); }));
 
-  const txs = data.transactions.filter(t=>bsInRange(t.date)).sort((a,b)=>b.date.localeCompare(a.date) || b.id-a.id);
+  const txs = [...data.transactions, ...(data.transfers||[])].filter(t=>bsInRange(t.date)).sort((a,b)=>b.date.localeCompare(a.date) || b.id-a.id);
   const days = {}; txs.forEach(t=>{ (days[t.date] = days[t.date] || []).push(t); });
   const dayKeys = Object.keys(days).sort().reverse();
   let h = `<div class="card" style="margin-top:16px;"><div class="flex-between"><h3 style="margin:0;">Transaksi (${txs.length}) · ${bsRange.from} s.d. ${bsRange.to}</h3>
@@ -2401,7 +2414,7 @@ document.getElementById('bsConfirm').addEventListener('input', bsRenderSummary);
 document.getElementById('view-bersih').addEventListener('change', (e)=>{
   const t = e.target;
   if(t.dataset.bsday){
-    data.transactions.filter(x=>x.date===t.dataset.bsday).forEach(x=>{ if(t.checked) bsSel.tx.add(x.id); else bsSel.tx.delete(x.id); });
+    [...data.transactions, ...(data.transfers||[])].filter(x=>x.date===t.dataset.bsday).forEach(x=>{ if(t.checked) bsSel.tx.add(x.id); else bsSel.tx.delete(x.id); });
     bsRender();
   } else if(t.dataset.bssel){
     const id = parseInt(t.dataset.id,10); if(t.checked) bsSel[t.dataset.bssel].add(id); else bsSel[t.dataset.bssel].delete(id);
@@ -2414,7 +2427,7 @@ document.getElementById('view-bersih').addEventListener('click', (e)=>{
   const all = e.target.closest('[data-bsall]'), none = e.target.closest('[data-bsnone]');
   if(all || none){
     const key = (all||none).dataset.bsall || (all||none).dataset.bsnone;
-    const src = { tx:()=>data.transactions.filter(x=>bsInRange(x.date)), sv:()=>data.savings.filter(x=>bsInRange(x.date) && !data.transactions.some(t=>t.id===x.related_transaction_id)), as:()=>data.assets.filter(x=>bsInRange(x.date)), je:()=>(data.journalEntries||[]).filter(x=>bsInRange(x.date)), inv:()=>(data.invoices||[]).filter(x=>bsInRange(x.date)), bsl:()=>(data.bankLines||[]).filter(x=>bsInRange(x.date)) }[key]();
+    const src = { tx:()=>[...data.transactions, ...(data.transfers||[])].filter(x=>bsInRange(x.date)), sv:()=>data.savings.filter(x=>bsInRange(x.date) && !data.transactions.some(t=>t.id===x.related_transaction_id)), as:()=>data.assets.filter(x=>bsInRange(x.date)), je:()=>(data.journalEntries||[]).filter(x=>bsInRange(x.date)), inv:()=>(data.invoices||[]).filter(x=>bsInRange(x.date)), bsl:()=>(data.bankLines||[]).filter(x=>bsInRange(x.date)) }[key]();
     src.forEach(x=>{ if(all) bsSel[key].add(x.id); else bsSel[key].delete(x.id); });
     bsRender();
   }
@@ -2478,7 +2491,7 @@ document.getElementById('bsDeleteBtn').addEventListener('click', async ()=>{
 
 // ===== Cadangan lengkap & reset semua data (Owner) =====
 const FB_TABLES = [
-  ['Transaksi','transactions','transactions'], ['Tabungan','savings','savings'], ['Piutang','receivables','receivables'], ['Pembayaran piutang','receivable_payments','receivablePayments'],
+  ['Transaksi','transactions','transactions'], ['Pindah dana','transactions_pindah','transfers'], ['Tabungan','savings','savings'], ['Piutang','receivables','receivables'], ['Pembayaran piutang','receivable_payments','receivablePayments'],
   ['Utang','payables','payables'], ['Pembayaran utang','payable_payments','payablePayments'], ['Kasbon','kasbon','kasbon'], ['Pembayaran kasbon','kasbon_payments','kasbonPayments'],
   ['Aset','assets','assets'], ['Anggaran','budgets','budgets'], ['Gaji','payroll','payroll'], ['Akun COA','coa_accounts','coa'], ['Jurnal manual','journal_entries','journalEntries'],
   ['Baris jurnal','journal_lines','journalLines'], ['Faktur','invoices','invoices'], ['Pembayaran faktur','invoice_payments','invoicePayments'], ['Rekening koran','bank_statement_lines','bankLines'], ['Pemetaan kategori','category_map','categoryMap']
@@ -2685,7 +2698,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
 
 // ---------- Toggle metode pembayaran (khusus Pendapatan) ----------
 // Opsi metode per jenis transaksi: 'i' = hanya Pendapatan, 'e' = hanya Pengeluaran, 'b' = keduanya
-const T_METHOD_SCOPE = { cash:'b', transfer:'b', tabungan:'e', service:'i', voucher:'i', piutang:'e', kasbon_beri:'e', tagihan:'e', bayar_hutang:'e', hutang:'i', terima_piutang:'i', terima_kasbon:'i' };
+const T_METHOD_SCOPE = { cash:'b', transfer:'b', tabungan:'e', service:'i', voucher:'i', piutang:'e', kasbon_beri:'e', tagihan:'e', bayar_hutang:'e', hutang:'i', terima_piutang:'i', terima_kasbon:'i', pindah:'b' };
 const T_NAME_METHODS = ['piutang','hutang','kasbon_beri','tagihan'];
 const T_LINK_METHODS = ['bayar_hutang','terima_piutang','terima_kasbon'];
 const T_DISB_METHODS = ['tabungan','piutang','hutang','kasbon_beri','bayar_hutang','terima_piutang','terima_kasbon'];
@@ -2696,6 +2709,7 @@ const T_FLOW_HELP = {
   tagihan: 'Pengeluaran langsung <strong>diakui sebagai beban (mengurangi laba)</strong>, tetapi <strong>kas belum berkurang</strong>. Otomatis masuk ke Utang sebagai tagihan. Kas baru berkurang saat Anda mencatat "Bayar hutang / tagihan". Isi Kategori (mis. Bandwidth) agar beban tercatat di akun yang tepat.',
   bayar_hutang: 'Pilih hutang/tagihan yang dibayar. <strong>Kas berkurang</strong> dan sisa utang otomatis berkurang. Tidak dihitung sebagai pengeluaran lagi. Khusus tagihan, bayar lebih dari sisa diperbolehkan (kelebihan bayar otomatis mengurangi tagihan berikutnya dari pihak yang sama).',
   terima_piutang: 'Pilih piutang yang dibayar. <strong>Kas bertambah</strong> dan sisa piutang otomatis berkurang. Tidak dihitung sebagai pendapatan.',
+  pindah: 'Uang hanya <strong>berpindah tempat</strong> (mis. setor kas ke bank, tarik dari bank, atau antar bank). <strong>Total kas tidak berubah</strong> dan tidak dihitung sebagai pendapatan/pengeluaran. Saldo per akun (Kas, BNI, BCA, BPD) terlihat di Akuntansi → Buku Besar/Neraca.',
   terima_kasbon: 'Pilih kasbon yang dibayar. <strong>Kas bertambah</strong> dan sisa kasbon otomatis berkurang. Tidak dihitung sebagai pendapatan.'
 };
 function updatePaymentFieldsVisibility(){
@@ -2759,6 +2773,9 @@ function updateMethodFieldsVisibility(){
   nameInput.placeholder = method==='piutang' ? 'Nama peminjam (yang berhutang ke kita)' : method==='kasbon_beri' ? 'Nama karyawan' : method==='tagihan' ? 'Nama penagih/supplier (mis. ISP)' : 'Nama pemberi pinjaman';
   document.getElementById('tLinkedRecord').style.display = T_LINK_METHODS.includes(method) ? '' : 'none';
   if(T_LINK_METHODS.includes(method)) fillLinkedRecordOptions();
+  const isPindah = method === 'pindah';
+  document.getElementById('tFromAcct').style.display = isPindah ? '' : 'none';
+  document.getElementById('tToAcct').style.display = isPindah ? '' : 'none';
   document.getElementById('tTabunganHelper').style.display = isTabungan ? '' : 'none';
   document.getElementById('tServiceHelper').style.display = isService ? '' : 'none';
   document.getElementById('tVoucherHelper').style.display = isVoucher ? '' : 'none';
@@ -2812,6 +2829,24 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
   const amount = type === 'income' ? amountRaw : -amountRaw;
 
   const paymentMethod = document.getElementById('tPaymentMethod').value;
+  if(paymentMethod === 'pindah'){
+    if(editingTransactionId !== null){ alert('Pindah dana tidak bisa diubah. Hapus (Owner) lalu input ulang.'); return; }
+    const from = document.getElementById('tFromAcct').value, to = document.getElementById('tToAcct').value;
+    if(from === to){ alert('Akun asal dan tujuan tidak boleh sama.'); return; }
+    const label = (v)=> v === 'Kas' ? 'Kas' : 'Bank ' + v;
+    const btnP = document.getElementById('addTransBtn'); btnP.disabled = true;
+    const { error: pe } = await sb.from('transactions').insert({
+      date, description: desc || `Pindah dana ${label(from)} → ${label(to)}`, amount: amountRaw, category: 'Pindah Dana', created_by: currentUsername,
+      payment_method: 'pindah', bank: to, loan_party: from, proof_path: null, saving_type: null
+    });
+    btnP.disabled = false;
+    if(pe){ alert('Gagal menyimpan: ' + pe.message); return; }
+    document.getElementById('tDesc').value = ''; document.getElementById('tCategory').value = ''; document.getElementById('tAmount').value = '';
+    document.getElementById('tDate').value = new Date().toISOString().slice(0,10);
+    flashSaved(); await loadAllData(); renderAll();
+    logActivity('create', 'transactions', `Pindah dana ${label(from)} → ${label(to)} ${formatCurrency(amountRaw)}`);
+    return;
+  }
   const STORED_METHOD = { kasbon_beri:'kasbon', bayar_hutang:'hutang', terima_piutang:'piutang', terima_kasbon:'kasbon' };
   const storedMethod = STORED_METHOD[paymentMethod] || paymentMethod;
   let bank = null, proofPath = null, savingType = null, loanParty = null;
@@ -3414,6 +3449,11 @@ function akBuildAutoJournal(d){
     const ls = lines.filter(l => l[1] > 0 || l[2] > 0).map(l => ({a:l[0], d:l[1]||0, k:l[2]||0}));
     if(ls.length) out.push({key, date: date || '1970-01-01', ref, desc, source:'auto', lines: ls, origin}); // data lama tanpa tanggal ditaruh di awal (saldo awal)
   };
+  (d.transfers||[]).forEach(t=>{
+    const acct = (l)=> l==='Kas' ? '1-1100' : akBankAccount(l);
+    const a = Math.abs(t.amount), ref = 'PD-'+t.id;
+    add(ref, t.date, ref, t.description || 'Pindah dana', [[acct(t.bank),a,0],[acct(t.loan_party),0,a]], {type:'transfer', id:t.id});
+  });
   const txIds = new Set(d.transactions.map(t=>t.id));
   const linked = (row)=> row.related_transaction_id != null && txIds.has(row.related_transaction_id);
 
