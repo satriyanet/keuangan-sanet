@@ -287,6 +287,7 @@
           <select id="tFromAcct" style="display:none;" aria-label="Dari akun"></select>
           <select id="tToAcct" style="display:none;" aria-label="Ke akun"></select>
           <input type="text" id="tLoanPartyName" placeholder="Nama peminjam/pemberi pinjaman" style="display:none;">
+          <select id="tEmployee" style="display:none;" aria-label="Nama karyawan"></select>
           <select id="tLinkedRecord" style="display:none;"></select>
           <select id="tSavingType" style="display:none;">
             <option value="Gaji">Ambil dari tabungan gaji</option>
@@ -590,7 +591,7 @@
         <details style="margin-top:12px;"><summary class="helper" style="cursor:pointer;">Form kasbon langsung (alternatif, ikut mengubah kas)</summary>
         <div class="form-grid" style="margin-top:10px;">
           <input type="date" id="kbDate">
-          <input type="text" id="kbName" placeholder="Nama karyawan">
+          <select id="kbName" aria-label="Nama karyawan"></select>
           <input type="number" id="kbAmount" placeholder="Jumlah kasbon (Rp)">
           <select id="kbMethod">
             <option value="cash">Diberikan Cash</option>
@@ -673,6 +674,7 @@
     <div class="subtabs" id="anggaranSubtabs">
       <button class="subtab active" data-subview="perusahaan">Anggaran perusahaan</button>
       <button class="subtab" data-subview="payroll">Gaji & bonus karyawan</button>
+      <button class="subtab" data-subview="karyawan">Daftar karyawan</button>
     </div>
 
     <div class="subview active" id="subview-perusahaan">
@@ -695,11 +697,33 @@
       </div>
     </div>
 
+    <div class="subview" id="subview-karyawan">
+      <div class="card" id="empSetup" style="display:none; border-color:var(--amber);">
+        <h3>Perlu satu langkah setup</h3>
+        <p class="helper" style="margin:0;">Jalankan file <b>migration-karyawan.sql</b> sekali di Supabase → SQL Editor, lalu muat ulang aplikasi.</p>
+      </div>
+      <div class="card" id="empFormCard">
+        <h3>Daftar karyawan (nama baku)</h3>
+        <p class="helper" style="margin-top:0;">Satu nama untuk satu orang. Saat kasbon atau gaji, accounting tinggal <b>memilih</b> nama dari daftar ini, tidak mengetik lagi, sehingga nama tidak berbeda-beda.</p>
+        <div class="form-grid">
+          <input type="text" id="empName" placeholder="Nama karyawan (yang dipakai di semua catatan)">
+          <input type="text" id="empNotes" placeholder="Catatan (opsional, mis. panggilan: Tut)">
+          <button class="primary" id="addEmpBtn">Tambah karyawan</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px;"><div style="overflow-x:auto;"><table><thead><tr><th>Nama</th><th>Catatan</th><th class="right">Kasbon aktif</th><th class="right">Aksi</th></tr></thead><tbody id="empBody"></tbody></table></div></div>
+      <div class="card" id="empUnmatchedCard" style="margin-top:16px; display:none; border-color:var(--amber);">
+        <h3>Nama lama belum terdaftar</h3>
+        <p class="helper" style="margin-top:0;">Nama berikut ada di catatan kasbon/gaji tetapi belum ada di daftar. Gabungkan ke karyawan yang benar (semua catatan ikut diganti) atau daftarkan sebagai karyawan baru.</p>
+        <div id="empUnmatched"></div>
+      </div>
+    </div>
+
     <div class="subview" id="subview-payroll">
       <div class="card">
         <h3>Tambah gaji & bonus karyawan</h3>
         <div class="form-grid">
-          <input type="text" id="pName" placeholder="Nama karyawan">
+          <select id="pName" aria-label="Nama karyawan"></select>
           <input type="month" id="pMonth">
           <input type="number" id="pSalary" placeholder="Gaji pokok (Rp)">
           <input type="number" id="pBonus" placeholder="Bonus (Rp, boleh 0)">
@@ -1144,7 +1168,7 @@ const SESSION_KEY = 'finance_app_session_v1';
 let currentRole = null;
 let currentUsername = null;
 let dataLoaded = false;
-let data = { transactions: [], transfers: [], recurring: [], rcReady: false, receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [], coa: [], journalEntries: [], journalLines: [], invoices: [], invoicePayments: [], bankLines: [], categoryMap: [] };
+let data = { transactions: [], transfers: [], recurring: [], rcReady: false, employees: [], empReady: false, receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [], coa: [], journalEntries: [], journalLines: [], invoices: [], invoicePayments: [], bankLines: [], categoryMap: [] };
 
 // ---------- Login ----------
 document.getElementById('loginBtn').addEventListener('click', handleLogin);
@@ -1280,7 +1304,7 @@ function setSyncStatus(ok){
 
 async function loadAllData(){
   try{
-    const [t, r, p, b, pr, sv, arp, app_, kb, kbp, ast, hol, coa, je, jl, inv, invp, bsl, cmap, rcx] = await Promise.all([
+    const [t, r, p, b, pr, sv, arp, app_, kb, kbp, ast, hol, coa, je, jl, inv, invp, bsl, cmap, rcx, empx] = await Promise.all([
       sb.from('transactions').select('*').order('date', {ascending:false}),
       sb.from('receivables').select('*').order('id'),
       sb.from('payables').select('*').order('id'),
@@ -1300,7 +1324,8 @@ async function loadAllData(){
       sb.from('invoice_payments').select('*').order('date', {ascending:false}),
       sb.from('bank_statement_lines').select('*').order('date', {ascending:false}),
       sb.from('category_map').select('*').order('keyword'),
-      sb.from('recurring_expenses').select('*').order('due_day')
+      sb.from('recurring_expenses').select('*').order('due_day'),
+      sb.from('employees').select('*').order('name')
     ]);
     if(t.error) throw t.error;
     const allTx = t.data.map(x => ({...x, amount: Number(x.amount)}));
@@ -1326,6 +1351,8 @@ async function loadAllData(){
     data.invoicePayments = invp.error ? [] : (invp.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.bankLines = bsl.error ? [] : (bsl.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.categoryMap = cmap.error ? [] : (cmap.data||[]);
+    data.empReady = !empx.error;
+    data.employees = empx.error ? [] : (empx.data||[]);
     data.rcReady = !rcx.error;
     data.recurring = rcx.error ? [] : (rcx.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     setSyncStatus(true);
@@ -1356,6 +1383,7 @@ function subscribeRealtime(){
   if(realtimeChannel) return;
   const tables = ['transactions','receivables','payables','receivable_payments','payable_payments','kasbon','kasbon_payments','budgets','payroll','savings','assets','holidays'];
   if(data.rcReady) tables.push('recurring_expenses');
+  if(data.empReady) tables.push('employees');
   if(data.akReady) tables.push('coa_accounts','journal_entries','journal_lines','invoices','invoice_payments','bank_statement_lines','category_map');
   realtimeChannel = sb.channel('finance-app-changes');
   tables.forEach(t => {
@@ -2528,7 +2556,7 @@ const FB_TABLES = [
   ['Transaksi','transactions','transactions'], ['Pindah dana','transactions_pindah','transfers'], ['Tabungan','savings','savings'], ['Piutang','receivables','receivables'], ['Pembayaran piutang','receivable_payments','receivablePayments'],
   ['Utang','payables','payables'], ['Pembayaran utang','payable_payments','payablePayments'], ['Kasbon','kasbon','kasbon'], ['Pembayaran kasbon','kasbon_payments','kasbonPayments'],
   ['Aset','assets','assets'], ['Anggaran','budgets','budgets'], ['Gaji','payroll','payroll'], ['Akun COA','coa_accounts','coa'], ['Jurnal manual','journal_entries','journalEntries'],
-  ['Baris jurnal','journal_lines','journalLines'], ['Faktur','invoices','invoices'], ['Pembayaran faktur','invoice_payments','invoicePayments'], ['Rekening koran','bank_statement_lines','bankLines'], ['Pemetaan kategori','category_map','categoryMap'], ['Pengeluaran rutin','recurring_expenses','recurring']
+  ['Baris jurnal','journal_lines','journalLines'], ['Faktur','invoices','invoices'], ['Pembayaran faktur','invoice_payments','invoicePayments'], ['Rekening koran','bank_statement_lines','bankLines'], ['Pemetaan kategori','category_map','categoryMap'], ['Pengeluaran rutin','recurring_expenses','recurring'], ['Karyawan','employees','employees']
 ];
 function fbDownloadBackup(prefix){
   const wb = XLSX.utils.book_new(), json = { dibuat: new Date().toISOString(), tabel: {} };
@@ -2755,6 +2783,90 @@ document.getElementById('view-rutin').addEventListener('click', async (e)=>{
   await loadAllData(); renderAll();
 });
 
+// ===== Daftar karyawan (nama baku) =====
+function empKnownNames(){
+  const set = new Map();
+  const add = (n)=>{ n = (n||'').trim(); if(n) set.set(n.toLowerCase(), n); };
+  data.kasbon.forEach(k=>add(k.employee_name)); data.payroll.forEach(p=>add(p.employee_name)); data.transactions.filter(t=>t.payment_method==='kasbon').forEach(t=>add(t.loan_party));
+  return [...set.values()];
+}
+function empUnmatched(){
+  const reg = new Set(data.employees.map(e=>e.name.trim().toLowerCase()));
+  return empKnownNames().filter(n=>!reg.has(n.toLowerCase())).sort((a,b)=>a.localeCompare(b));
+}
+function fillEmployeeSelects(){
+  const names = data.empReady ? data.employees.filter(e=>e.is_active !== false).map(e=>e.name).sort((a,b)=>a.localeCompare(b)) : empKnownNames().sort((a,b)=>a.localeCompare(b));
+  ['kbName','pName','tEmployee'].forEach(id=>{
+    const el = document.getElementById(id); if(!el) return;
+    const cur = el.value;
+    el.innerHTML = `<option value="">${names.length ? '— pilih karyawan —' : '— belum ada karyawan: tambah di Anggaran → Daftar karyawan —'}</option>` + names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    if(names.includes(cur)) el.value = cur;
+  });
+}
+function renderEmployees(){
+  fillEmployeeSelects();
+  const body = document.getElementById('empBody'); if(!body) return;
+  document.getElementById('empSetup').style.display = data.empReady ? 'none' : '';
+  document.getElementById('empFormCard').style.display = data.empReady ? '' : 'none';
+  const owner = currentRole === 'owner';
+  const sisaKasbon = (name)=> data.kasbon.filter(k=>(k.employee_name||'').trim().toLowerCase()===name.trim().toLowerCase()).reduce((s,k)=>s+Math.max(0,tRecordSisa('kasbon',k)),0);
+  body.innerHTML = data.employees.map(e=>`<tr ${e.is_active===false?'style="opacity:.6;"':''}><td><b>${escapeHtml(e.name)}</b>${e.is_active===false?' <span class="pill pill-purple">nonaktif</span>':''}</td><td>${escapeHtml(e.notes||'')}</td><td class="right">${formatCurrency(sisaKasbon(e.name))}</td>
+    <td class="right"><button class="ghost" data-emp="rename" data-id="${e.id}" style="padding:4px 10px; font-size:12px;">Ubah nama</button> <button class="ghost" data-emp="toggle" data-id="${e.id}" style="padding:4px 10px; font-size:12px;">${e.is_active===false?'Aktifkan':'Nonaktifkan'}</button>${owner?` <button class="del-btn" data-emp="del" data-id="${e.id}">Hapus</button>`:''}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Belum ada karyawan.</td></tr>';
+  const un = data.empReady ? empUnmatched() : [];
+  document.getElementById('empUnmatchedCard').style.display = un.length ? '' : 'none';
+  const opts = data.employees.filter(e=>e.is_active!==false).map(e=>`<option value="${escapeHtml(e.name)}">${escapeHtml(e.name)}</option>`).join('');
+  document.getElementById('empUnmatched').innerHTML = un.map(n=>`<div class="form-grid" style="margin-bottom:8px; align-items:center;"><div><b>${escapeHtml(n)}</b></div>
+    <select data-empmerge="${escapeHtml(n)}"><option value="">Gabungkan ke...</option>${opts}</select>
+    <div style="display:flex; gap:6px;"><button class="primary" data-emp="merge" data-name="${escapeHtml(n)}" style="padding:4px 10px; font-size:12px;">Gabungkan</button><button class="ghost" data-emp="register" data-name="${escapeHtml(n)}" style="padding:4px 10px; font-size:12px;">Daftarkan baru</button></div></div>`).join('');
+}
+// Ganti nama di semua catatan (kasbon, gaji, transaksi kasbon)
+async function empCascadeRename(oldName, newName){
+  const lower = oldName.trim().toLowerCase();
+  const upd = async (table, col, rows, extra)=>{
+    const ids = rows.filter(r=>(r[col]||'').trim().toLowerCase()===lower).map(r=>r.id);
+    for(let i=0;i<ids.length;i+=100){ const { error } = await sb.from(table).update({[col]:newName}).in('id', ids.slice(i,i+100)); if(error) throw new Error(table+': '+error.message); }
+  };
+  await upd('kasbon','employee_name', data.kasbon); await upd('payroll','employee_name', data.payroll);
+  await upd('transactions','loan_party', data.transactions.filter(t=>t.payment_method==='kasbon'));
+}
+document.getElementById('addEmpBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('empName').value.trim().replace(/\s+/g,' ');
+  if(!name){ alert('Isi nama karyawan.'); return; }
+  if(data.employees.some(e=>e.name.trim().toLowerCase()===name.toLowerCase())){ alert('Nama ini sudah ada di daftar.'); return; }
+  const { error } = await sb.from('employees').insert({ name, notes: document.getElementById('empNotes').value.trim() || null, created_by: currentUsername });
+  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  document.getElementById('empName').value = ''; document.getElementById('empNotes').value = '';
+  logActivity('create', 'employees', 'Karyawan ' + name); flashSaved(); await loadAllData(); renderAll();
+});
+document.getElementById('subview-karyawan').addEventListener('click', async (e)=>{
+  const b = e.target.closest('button[data-emp]'); if(!b) return;
+  const act = b.dataset.emp; let id = parseInt(b.dataset.id,10); const emp = data.employees.find(x=>x.id===id);
+  try{
+    if(act === 'rename'){
+      const nn = (prompt('Nama baru untuk "' + emp.name + '" (semua catatan kasbon & gaji ikut berubah):', emp.name) || '').trim().replace(/\s+/g,' ');
+      if(!nn || nn === emp.name) return;
+      if(data.employees.some(x=>x.id!==id && x.name.trim().toLowerCase()===nn.toLowerCase())){ alert('Nama itu sudah dipakai karyawan lain. Gunakan fitur Gabungkan.'); return; }
+      const { error } = await sb.from('employees').update({ name: nn }).eq('id', id); if(error) throw new Error(error.message);
+      await empCascadeRename(emp.name, nn); logActivity('update','employees',`Ubah nama ${emp.name} -> ${nn}`);
+    } else if(act === 'toggle'){
+      const { error } = await sb.from('employees').update({ is_active: emp.is_active === false }).eq('id', id); if(error) throw new Error(error.message);
+    } else if(act === 'del'){
+      if(currentRole !== 'owner' || !confirm(`Hapus "${emp.name}" dari daftar? Catatan kasbon/gaji yang sudah ada tetap tersimpan (namanya jadi "belum terdaftar").`)) return;
+      const { error } = await sb.from('employees').delete().eq('id', id); if(error) throw new Error(error.message);
+      logActivity('delete','employees','Karyawan ' + emp.name);
+    } else if(act === 'register'){
+      const { error } = await sb.from('employees').insert({ name: b.dataset.name, created_by: currentUsername }); if(error) throw new Error(error.message);
+      logActivity('create','employees','Karyawan ' + b.dataset.name);
+    } else if(act === 'merge'){
+      const sel = [...document.querySelectorAll('select[data-empmerge]')].find(x=>x.dataset.empmerge === b.dataset.name);
+      const target = sel && sel.value; if(!target){ alert('Pilih karyawan tujuan dulu.'); return; }
+      if(!confirm(`Ganti semua nama "${b.dataset.name}" menjadi "${target}" di kasbon, gaji, dan transaksi?`)) return;
+      await empCascadeRename(b.dataset.name, target); logActivity('update','employees',`Gabung nama ${b.dataset.name} -> ${target}`);
+    }
+  }catch(err){ alert('Gagal: ' + (err.message||err)); }
+  await loadAllData(); renderAll();
+});
+
 function renderAll(){
   // Setiap bagian dirender terpisah: kalau satu bagian error, bagian lain tetap tampil dan errornya ditampilkan di bagian atas
   const errs = [];
@@ -2762,7 +2874,7 @@ function renderAll(){
   run('Dashboard', renderDashboard); run('Transaksi', renderTransactions); run('Laporan', renderLaporan);
   run('Piutang', renderReceivables); run('Utang', renderPayables); run('Kasbon', renderKasbon); run('Rekomendasi', renderRekomendasiPelunasan);
   run('Anggaran', renderBudgets); run('Gaji', renderPayroll); run('Tabungan', renderSavings); run('Proyeksi', renderProjection);
-  run('Akuntansi', renderAkuntansi); run('Pengeluaran rutin', renderRutin); run('Akun pindah dana', fillTransferAccounts); run('Akun transaksi', fillTxAccountOptions); run('Saldo akun', renderDashAccounts); run('Form pembayaran', fillLinkedRecordOptions); run('Dashboard periode', renderDashPeriods);
+  run('Akuntansi', renderAkuntansi); run('Pengeluaran rutin', renderRutin); run('Karyawan', renderEmployees); run('Akun pindah dana', fillTransferAccounts); run('Akun transaksi', fillTxAccountOptions); run('Saldo akun', renderDashAccounts); run('Form pembayaran', fillLinkedRecordOptions); run('Dashboard periode', renderDashPeriods);
   if(currentRole === 'owner'){
     if(bsRange) run('Hapus data', bsRender);
     run('Perbandingan', renderComparison); run('Pengguna', renderUsers);
@@ -2985,7 +3097,8 @@ function updateMethodFieldsVisibility(){
   document.getElementById('tSavingType').style.display = isTabungan ? '' : 'none';
   document.getElementById('tSavingTypeCustom').style.display = (isTabungan && document.getElementById('tSavingType').value === 'Lainnya') ? '' : 'none';
   const nameInput = document.getElementById('tLoanPartyName');
-  nameInput.style.display = T_NAME_METHODS.includes(method) ? '' : 'none';
+  nameInput.style.display = (T_NAME_METHODS.includes(method) && method !== 'kasbon_beri') ? '' : 'none';
+  document.getElementById('tEmployee').style.display = method === 'kasbon_beri' ? '' : 'none';
   nameInput.placeholder = method==='piutang' ? 'Nama peminjam (yang berhutang ke kita)' : method==='kasbon_beri' ? 'Nama karyawan' : method==='tagihan' ? 'Nama penagih/supplier (mis. ISP)' : 'Nama pemberi pinjaman';
   document.getElementById('tLinkedRecord').style.display = T_LINK_METHODS.includes(method) ? '' : 'none';
   if(T_LINK_METHODS.includes(method)) fillLinkedRecordOptions();
@@ -3099,8 +3212,8 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
   }
 
   if(isPiutang || isHutang || isKasbonBeri || isTagihan){
-    loanParty = document.getElementById('tLoanPartyName').value.trim();
-    if(!loanParty){ alert(isPiutang ? 'Mohon isi nama peminjam.' : isKasbonBeri ? 'Mohon isi nama karyawan.' : isTagihan ? 'Mohon isi nama penagih/supplier.' : 'Mohon isi nama pemberi pinjaman.'); return; }
+    loanParty = (isKasbonBeri ? document.getElementById('tEmployee') : document.getElementById('tLoanPartyName')).value.trim();
+    if(!loanParty){ alert(isPiutang ? 'Mohon isi nama peminjam.' : isKasbonBeri ? 'Mohon pilih nama karyawan (tambahkan dulu di Anggaran → Daftar karyawan jika belum ada).' : isTagihan ? 'Mohon isi nama penagih/supplier.' : 'Mohon isi nama pemberi pinjaman.'); return; }
   }
   // Pembayaran hutang/piutang/kasbon: wajib pilih catatan yang dibayar; cek sisa
   let linkedRec = null, linkedTable = null, linkedPayTable = null, linkedPayField = null;
@@ -3241,7 +3354,7 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
   document.getElementById('tProofFile').value = ''; document.getElementById('tBankCustom').value = '';
   document.getElementById('tSavingTypeCustom').value = '';
   document.getElementById('tTabunganDisbursement').value = 'cash';
-  document.getElementById('tLoanPartyName').value = '';
+  document.getElementById('tLoanPartyName').value = ''; document.getElementById('tEmployee').value = '';
   document.getElementById('tLinkedRecord').value = '';
   document.getElementById('tDate').value = new Date().toISOString().slice(0,10);
   flashSaved(); await loadAllData(); renderAll();
