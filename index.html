@@ -170,6 +170,7 @@
     <button class="tab" data-view="piutang">Piutang & Utang</button>
     <button class="tab" data-view="anggaran">Anggaran</button>
     <button class="tab" data-view="akuntansi">Akuntansi</button>
+    <button class="tab" data-view="rutin">Pengeluaran Rutin <span id="rcBadge"></span></button>
     <button class="tab owner-only" data-view="proyeksi">Proyeksi Kas</button>
     <button class="tab owner-only" data-view="perbandingan">Perbandingan</button>
     <button class="tab owner-only" data-view="pengguna">Pengguna</button>
@@ -178,6 +179,7 @@
   </div>
 
   <div class="view active" id="view-dashboard">
+    <div id="rcAlert"></div>
     <div class="subtabs" id="dashSubtabs">
       <button class="subtab active" data-subview="dash-ringkasan">Ringkasan</button>
       <button class="subtab" data-subview="dash-harian">Harian</button>
@@ -319,6 +321,7 @@
         <p class="helper" id="tVoucherHelper" style="display:none;">Pemasukan ini <strong>tidak masuk ke kas perusahaan</strong> — otomatis masuk ke Tabungan Voucher terpisah, dan tampil sebagai "Kas Voucher" tersendiri di Dashboard.</p>
         <p class="helper" id="tPiutangHelper" style="display:none;">Uang ini <strong>keluar dari kas</strong> (dipinjamkan), otomatis muncul di tab Piutang & Utang → Piutang. Tidak dihitung sebagai pengeluaran/mengurangi laba — cuma tukar bentuk dari kas jadi piutang.</p>
         <p class="helper" id="tHutangHelper" style="display:none;">Uang ini <strong>masuk ke kas</strong> (dipinjam dari pihak lain), otomatis muncul di tab Piutang & Utang → Utang. Tidak dihitung sebagai pendapatan/menambah laba — cuma tukar bentuk dari kewajiban jadi kas.</p>
+        <p class="helper" id="tRcNote" style="display:none; color:var(--accent);"></p>
         <p class="helper" id="tFlowHelper" style="display:none;"></p>
         <p class="helper" id="tProofStatus"></p>
         <div style="display:flex; gap:8px; margin-top:8px;">
@@ -970,6 +973,33 @@
     </div>
   </div>
 
+  <div class="view" id="view-rutin">
+    <div class="card" id="rcSetup" style="display:none; border-color:var(--amber);">
+      <h3>Perlu satu langkah setup</h3>
+      <p class="helper" style="margin:0;">Fitur ini butuh tabel baru. Buka Supabase → SQL Editor, jalankan file <b>migration-rutin.sql</b> satu kali, lalu muat ulang aplikasi.</p>
+    </div>
+    <div class="card" id="rcFormCard">
+      <h3 id="rcFormTitle">Tambah pengeluaran rutin / pengingat</h3>
+      <div class="form-grid">
+        <div><label class="helper">Nama</label><input type="text" id="rcName" placeholder="mis. Listrik kantor"></div>
+        <div><label class="helper">Kategori</label><input type="text" id="rcCategory" placeholder="mis. Utilitas"></div>
+        <div><label class="helper">Perkiraan jumlah (Rp)</label><input type="number" id="rcAmount" placeholder="boleh diubah saat bayar"></div>
+        <div><label class="helper">Jatuh tempo tanggal</label><input type="number" id="rcDay" min="1" max="31" placeholder="1-31"></div>
+        <div><label class="helper">Berulang</label><select id="rcInterval"><option value="1">Tiap bulan</option><option value="2">Tiap 2 bulan</option><option value="3">Tiap 3 bulan</option><option value="6">Tiap 6 bulan</option><option value="12">Tiap tahun</option></select></div>
+        <div><label class="helper">Mulai bulan</label><input type="month" id="rcFirst"></div>
+        <div><label class="helper">Ingatkan H- (hari)</label><input type="number" id="rcRemind" min="0" max="30" value="3"></div>
+        <div><label class="helper">Catatan</label><input type="text" id="rcNotes" placeholder="opsional (mis. no. pelanggan)"></div>
+        <div style="display:flex; gap:6px; align-items:flex-end;"><button class="primary" id="rcSaveBtn">Simpan</button><button class="ghost" id="rcCancelEdit" style="display:none;">Batal</button></div>
+      </div>
+      <p class="helper">Contoh: Listrik tgl 5 tiap bulan · Pulsa HP kantor tgl 1 tiap bulan · Service motor tiap 3 bulan. Tanggal 31 otomatis menyesuaikan di bulan yang lebih pendek.</p>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="flex-between"><h3 style="margin:0;">Jadwal &amp; status</h3><button class="ghost" id="rcNotifBtn">Aktifkan notifikasi di perangkat ini</button></div>
+      <p class="helper">Tombol <b>Bayar</b> membuka Transaksi baru yang sudah terisi; setelah disimpan, jadwal otomatis ditandai lunas. Pengingat tampil di Dashboard dan di tab ini mulai H- sebelum jatuh tempo, dan terus merah sampai dibayar atau dilewati.</p>
+      <div style="overflow-x:auto;"><table><thead><tr><th>Nama</th><th>Jatuh tempo</th><th class="right">Perkiraan</th><th>Status</th><th class="right">Aksi</th></tr></thead><tbody id="rcBody"></tbody></table></div>
+    </div>
+  </div>
+
   <div class="view owner-only" id="view-bersih">
     <div class="card">
       <h3>Cadangan &amp; reset semua data</h3>
@@ -1114,7 +1144,7 @@ const SESSION_KEY = 'finance_app_session_v1';
 let currentRole = null;
 let currentUsername = null;
 let dataLoaded = false;
-let data = { transactions: [], transfers: [], receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [], coa: [], journalEntries: [], journalLines: [], invoices: [], invoicePayments: [], bankLines: [], categoryMap: [] };
+let data = { transactions: [], transfers: [], recurring: [], rcReady: false, receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [], coa: [], journalEntries: [], journalLines: [], invoices: [], invoicePayments: [], bankLines: [], categoryMap: [] };
 
 // ---------- Login ----------
 document.getElementById('loginBtn').addEventListener('click', handleLogin);
@@ -1187,8 +1217,8 @@ function stopInactivityTimer(){
   document.addEventListener(evt, resetInactivityTimer, {passive:true});
 });
 
-const OWNER_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','akuntansi','proyeksi','perbandingan','pengguna','log','bersih'];
-const ACCOUNTING_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','akuntansi'];
+const OWNER_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','akuntansi','rutin','proyeksi','perbandingan','pengguna','log','bersih'];
+const ACCOUNTING_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','akuntansi','rutin'];
 
 function applyRoleUI(){
   const badge = document.getElementById('roleBadge');
@@ -1250,7 +1280,7 @@ function setSyncStatus(ok){
 
 async function loadAllData(){
   try{
-    const [t, r, p, b, pr, sv, arp, app_, kb, kbp, ast, hol, coa, je, jl, inv, invp, bsl, cmap] = await Promise.all([
+    const [t, r, p, b, pr, sv, arp, app_, kb, kbp, ast, hol, coa, je, jl, inv, invp, bsl, cmap, rcx] = await Promise.all([
       sb.from('transactions').select('*').order('date', {ascending:false}),
       sb.from('receivables').select('*').order('id'),
       sb.from('payables').select('*').order('id'),
@@ -1269,7 +1299,8 @@ async function loadAllData(){
       sb.from('invoices').select('*').order('date', {ascending:false}),
       sb.from('invoice_payments').select('*').order('date', {ascending:false}),
       sb.from('bank_statement_lines').select('*').order('date', {ascending:false}),
-      sb.from('category_map').select('*').order('keyword')
+      sb.from('category_map').select('*').order('keyword'),
+      sb.from('recurring_expenses').select('*').order('due_day')
     ]);
     if(t.error) throw t.error;
     const allTx = t.data.map(x => ({...x, amount: Number(x.amount)}));
@@ -1295,6 +1326,8 @@ async function loadAllData(){
     data.invoicePayments = invp.error ? [] : (invp.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.bankLines = bsl.error ? [] : (bsl.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.categoryMap = cmap.error ? [] : (cmap.data||[]);
+    data.rcReady = !rcx.error;
+    data.recurring = rcx.error ? [] : (rcx.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     setSyncStatus(true);
   }catch(e){
     console.error('Gagal memuat data:', e);
@@ -1322,6 +1355,7 @@ function scheduleRealtimeReload(){
 function subscribeRealtime(){
   if(realtimeChannel) return;
   const tables = ['transactions','receivables','payables','receivable_payments','payable_payments','kasbon','kasbon_payments','budgets','payroll','savings','assets','holidays'];
+  if(data.rcReady) tables.push('recurring_expenses');
   if(data.akReady) tables.push('coa_accounts','journal_entries','journal_lines','invoices','invoice_payments','bank_statement_lines','category_map');
   realtimeChannel = sb.channel('finance-app-changes');
   tables.forEach(t => {
@@ -1685,6 +1719,7 @@ function txEditLockReason(tx){
 function startEditTransaction(tx){
   const lock = txEditLockReason(tx);
   if(lock){ alert(lock); return; }
+  rcPending = null; rcUpdateNote();
   editingTransactionId = tx.id;
   document.getElementById('tDate').value = tx.date;
   document.getElementById('tDesc').value = tx.description;
@@ -2493,7 +2528,7 @@ const FB_TABLES = [
   ['Transaksi','transactions','transactions'], ['Pindah dana','transactions_pindah','transfers'], ['Tabungan','savings','savings'], ['Piutang','receivables','receivables'], ['Pembayaran piutang','receivable_payments','receivablePayments'],
   ['Utang','payables','payables'], ['Pembayaran utang','payable_payments','payablePayments'], ['Kasbon','kasbon','kasbon'], ['Pembayaran kasbon','kasbon_payments','kasbonPayments'],
   ['Aset','assets','assets'], ['Anggaran','budgets','budgets'], ['Gaji','payroll','payroll'], ['Akun COA','coa_accounts','coa'], ['Jurnal manual','journal_entries','journalEntries'],
-  ['Baris jurnal','journal_lines','journalLines'], ['Faktur','invoices','invoices'], ['Pembayaran faktur','invoice_payments','invoicePayments'], ['Rekening koran','bank_statement_lines','bankLines'], ['Pemetaan kategori','category_map','categoryMap']
+  ['Baris jurnal','journal_lines','journalLines'], ['Faktur','invoices','invoices'], ['Pembayaran faktur','invoice_payments','invoicePayments'], ['Rekening koran','bank_statement_lines','bankLines'], ['Pemetaan kategori','category_map','categoryMap'], ['Pengeluaran rutin','recurring_expenses','recurring']
 ];
 function fbDownloadBackup(prefix){
   const wb = XLSX.utils.book_new(), json = { dibuat: new Date().toISOString(), tabel: {} };
@@ -2577,6 +2612,149 @@ function fillTransferAccounts(){
   fromEl.value = accts.some(a=>a.code===f0) ? f0 : '1-1100';
   toEl.value = accts.some(a=>a.code===t0) ? t0 : (accts.find(a=>a.code!==fromEl.value)||{}).code;
 }
+// ===== Pengeluaran rutin & pengingat =====
+let rcPending = null, rcEditingId = null;
+const RC_MON = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+function rcToday(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function rcAddMonths(p, n){ const [y,m] = p.split('-').map(Number); const d = new Date(y, m-1+n, 1); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
+function rcMonthsBetween(a, b){ const [y1,m1] = a.split('-').map(Number), [y2,m2] = b.split('-').map(Number); return (y2-y1)*12 + (m2-m1); }
+function rcDueDate(p, day){ const [y,m] = p.split('-').map(Number); const last = new Date(y, m, 0).getDate(); return p + '-' + String(Math.min(day, last)).padStart(2,'0'); }
+function rcPeriodLabel(p){ const [y,m] = p.split('-').map(Number); return RC_MON[m-1] + ' ' + y; }
+function rcDays(due, today){ const a = new Date(due + 'T00:00:00'), b = new Date(today + 'T00:00:00'); return Math.round((a - b) / 86400000); }
+// Status satu jadwal: periode terawal yang belum dibayar/dilewati (melihat mundur 3 bulan)
+function rcStatus(item){
+  const today = rcToday(), cur = today.slice(0,7), skipped = (item.skipped||'').split(',').filter(Boolean);
+  const upper = rcAddMonths(cur, item.interval_months), periods = [];
+  for(let p = rcAddMonths(cur,-3); p <= upper; p = rcAddMonths(p,1)){
+    const diff = rcMonthsBetween(item.first_month, p);
+    if(diff >= 0 && diff % item.interval_months === 0) periods.push(p);
+  }
+  const paidTx = (p)=> data.transactions.find(t=>t.recurring_id === item.id && t.recurring_period === p);
+  const target = periods.find(p=>!paidTx(p) && !skipped.includes(p));
+  if(!target){ const last = periods.filter(p=>paidTx(p)).pop(); return { item, period:last||null, due:last?rcDueDate(last,item.due_day):null, days:null, status:'paid', tx:last?paidTx(last):null }; }
+  const due = rcDueDate(target, item.due_day), days = rcDays(due, today);
+  const status = days < 0 ? 'overdue' : days === 0 ? 'today' : days <= item.remind_days ? 'soon' : 'later';
+  return { item, period:target, due, days, status };
+}
+function rcStatusText(r){
+  if(r.status === 'overdue') return `<span class="pill pill-red">Terlambat ${-r.days} hari</span>`;
+  if(r.status === 'today') return '<span class="pill pill-red">Jatuh tempo HARI INI</span>';
+  if(r.status === 'soon') return `<span class="pill pill-amber">H-${r.days}</span>`;
+  if(r.status === 'later') return `<span class="pill pill-purple">${r.days} hari lagi</span>`;
+  return '<span class="pill pill-green">Sudah dibayar</span>';
+}
+function rcUpdateNote(){
+  const el = document.getElementById('tRcNote'); if(!el) return;
+  if(!rcPending){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  const it = data.recurring.find(x=>x.id===rcPending.id);
+  el.style.display = ''; el.innerHTML = `Membayar pengingat: <b>${escapeHtml(it ? it.name : '')}</b> (${rcPeriodLabel(rcPending.period)}). <button class="ghost" id="rcCancelPending" type="button" style="padding:2px 8px; font-size:12px;">Batal</button>`;
+}
+document.addEventListener('click', (e)=>{ if(e.target.id === 'rcCancelPending'){ rcPending = null; rcUpdateNote(); } });
+function rcStartPay(id, period){
+  const it = data.recurring.find(x=>x.id===id); if(!it) return;
+  if(editingTransactionId !== null) cancelEditTransaction();
+  document.querySelector('.tab[data-view="transaksi"]').click();
+  const st = document.querySelector('#transaksiSubtabs .subtab[data-subview="baru"]'); if(st) st.click();
+  rcPending = { id, period };
+  document.getElementById('tType').value = 'expense'; updatePaymentFieldsVisibility();
+  document.getElementById('tPaymentMethod').value = 'cash'; updateMethodFieldsVisibility();
+  document.getElementById('tDate').value = rcToday();
+  document.getElementById('tDesc').value = `${it.name} - ${rcPeriodLabel(period)}`;
+  document.getElementById('tCategory').value = it.category || '';
+  document.getElementById('tAmount').value = it.amount || '';
+  rcUpdateNote(); window.scrollTo({top:0, behavior:'smooth'});
+}
+function renderRutin(){
+  const setup = document.getElementById('rcSetup'); if(!setup) return;
+  setup.style.display = data.rcReady ? 'none' : '';
+  document.getElementById('rcFormCard').style.display = data.rcReady ? '' : 'none';
+  const list = data.rcReady ? data.recurring.filter(x=>x.is_active !== false).map(rcStatus) : [];
+  const order = { overdue:0, today:1, soon:2, later:3, paid:4 };
+  list.sort((a,b)=> order[a.status]-order[b.status] || (a.due||'9').localeCompare(b.due||'9'));
+  const inactive = data.rcReady ? data.recurring.filter(x=>x.is_active === false) : [];
+  const owner = currentRole === 'owner';
+  document.getElementById('rcBody').innerHTML = (list.map(r=>{
+    const it = r.item;
+    return `<tr><td><b>${escapeHtml(it.name)}</b><br><span class="helper" style="margin:0;">${escapeHtml(it.category||'')}${it.notes?' · '+escapeHtml(it.notes):''} · ${it.interval_months===1?'tiap bulan':it.interval_months===12?'tiap tahun':'tiap '+it.interval_months+' bulan'}</span></td>
+      <td>${r.due ? r.due + '<br><span class="helper" style="margin:0;">' + rcPeriodLabel(r.period) + '</span>' : '-'}</td>
+      <td class="right">${it.amount ? formatCurrency(it.amount) : '-'}</td><td>${rcStatusText(r)}</td>
+      <td class="right">${r.status !== 'paid' ? `<button class="primary" data-rc="pay" data-id="${it.id}" data-period="${r.period}" style="padding:4px 10px; font-size:12px;">Bayar</button> <button class="ghost" data-rc="skip" data-id="${it.id}" data-period="${r.period}" style="padding:4px 10px; font-size:12px;">Lewati</button> ` : ''}<button class="ghost" data-rc="edit" data-id="${it.id}" style="padding:4px 10px; font-size:12px;">Ubah</button> <button class="ghost" data-rc="off" data-id="${it.id}" style="padding:4px 10px; font-size:12px;">Nonaktifkan</button>${owner?` <button class="del-btn" data-rc="del" data-id="${it.id}">Hapus</button>`:''}</td></tr>`;
+  }).join('') + inactive.map(it=>`<tr style="opacity:.6;"><td>${escapeHtml(it.name)} <span class="pill pill-purple">nonaktif</span></td><td>-</td><td class="right">${it.amount?formatCurrency(it.amount):'-'}</td><td>-</td><td class="right"><button class="ghost" data-rc="on" data-id="${it.id}" style="padding:4px 10px; font-size:12px;">Aktifkan</button>${owner?` <button class="del-btn" data-rc="del" data-id="${it.id}">Hapus</button>`:''}</td></tr>`).join('')) || '<tr><td colspan="5" class="empty">Belum ada jadwal. Tambahkan di atas, mis. Listrik tgl 5.</td></tr>';
+
+  // pengingat: tab badge + banner Dashboard
+  const due = list.filter(r=>['overdue','today','soon'].includes(r.status));
+  const badge = document.getElementById('rcBadge');
+  if(badge) badge.innerHTML = due.length ? `<span class="pill pill-red" style="margin-left:4px;">${due.length}</span>` : '';
+  const alertEl = document.getElementById('rcAlert');
+  if(alertEl) alertEl.innerHTML = due.length ? `<div class="card" style="border-color:var(--red); margin-bottom:16px;"><div class="flex-between"><h3 style="margin:0; color:var(--red);">Pengingat pembayaran (${due.length})</h3><button class="ghost" data-goto-rc>Buka jadwal</button></div>` +
+    due.map(r=>`<p style="margin:8px 0 0;">${rcStatusText(r)} <b>${escapeHtml(r.item.name)}</b> · ${r.due}${r.item.amount?' · '+formatCurrency(r.item.amount):''}</p>`).join('') + '</div>' : '';
+  rcNotify(due);
+}
+async function rcNotify(due){
+  try{
+    if(!due.length || !('Notification' in window) || Notification.permission !== 'granted') return;
+    const key = 'rc_notified_' + rcToday(); if(localStorage.getItem(key)) return;
+    localStorage.setItem(key, '1');
+    const body = due.map(r=>r.item.name + ' (' + (r.status==='overdue' ? 'terlambat' : r.status==='today' ? 'hari ini' : 'H-'+r.days) + ')').join(', ');
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if(reg && reg.showNotification) reg.showNotification('Pembayaran rutin', { body, icon:'icon-192.png' }); else new Notification('Pembayaran rutin', { body });
+  }catch(e){}
+}
+document.addEventListener('click', (e)=>{ if(e.target.closest('[data-goto-rc]')) document.querySelector('.tab[data-view="rutin"]').click(); });
+document.getElementById('rcNotifBtn').addEventListener('click', async ()=>{
+  if(!('Notification' in window)){ alert('Browser ini tidak mendukung notifikasi.'); return; }
+  const r = await Notification.requestPermission();
+  alert(r === 'granted' ? 'Notifikasi aktif. Pengingat muncul sekali sehari saat aplikasi dibuka.' : 'Notifikasi tidak diizinkan. Pengingat tetap tampil di Dashboard.');
+});
+function rcResetForm(){
+  rcEditingId = null;
+  ['rcName','rcCategory','rcAmount','rcDay','rcNotes'].forEach(id=>document.getElementById(id).value = '');
+  document.getElementById('rcInterval').value = '1'; document.getElementById('rcRemind').value = '3'; document.getElementById('rcFirst').value = '';
+  document.getElementById('rcFormTitle').textContent = 'Tambah pengeluaran rutin / pengingat';
+  document.getElementById('rcSaveBtn').textContent = 'Simpan'; document.getElementById('rcCancelEdit').style.display = 'none';
+}
+document.getElementById('rcCancelEdit').addEventListener('click', rcResetForm);
+document.getElementById('rcSaveBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('rcName').value.trim(), day = parseInt(document.getElementById('rcDay').value, 10);
+  if(!name || !(day >= 1 && day <= 31)){ alert('Isi nama dan tanggal jatuh tempo (1-31).'); return; }
+  const row = { name, category: document.getElementById('rcCategory').value.trim() || null, amount: parseFloat(document.getElementById('rcAmount').value) || 0,
+    due_day: day, interval_months: parseInt(document.getElementById('rcInterval').value, 10) || 1,
+    first_month: document.getElementById('rcFirst').value || rcToday().slice(0,7),
+    remind_days: Math.max(0, parseInt(document.getElementById('rcRemind').value, 10) || 0), notes: document.getElementById('rcNotes').value.trim() || null };
+  const q = rcEditingId ? sb.from('recurring_expenses').update(row).eq('id', rcEditingId) : sb.from('recurring_expenses').insert({ ...row, created_by: currentUsername });
+  const { error } = await q;
+  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  logActivity(rcEditingId ? 'update' : 'create', 'recurring_expenses', `Pengeluaran rutin ${name} tgl ${day}`);
+  rcResetForm(); flashSaved(); await loadAllData(); renderAll();
+});
+document.getElementById('view-rutin').addEventListener('click', async (e)=>{
+  const b = e.target.closest('button[data-rc]'); if(!b) return;
+  const id = parseInt(b.dataset.id, 10), it = data.recurring.find(x=>x.id===id); if(!it) return;
+  const act = b.dataset.rc;
+  if(act === 'pay'){ rcStartPay(id, b.dataset.period); return; }
+  if(act === 'edit'){
+    rcEditingId = id;
+    document.getElementById('rcName').value = it.name; document.getElementById('rcCategory').value = it.category || ''; document.getElementById('rcAmount').value = it.amount || '';
+    document.getElementById('rcDay').value = it.due_day; document.getElementById('rcInterval').value = String(it.interval_months); document.getElementById('rcFirst').value = it.first_month;
+    document.getElementById('rcRemind').value = it.remind_days; document.getElementById('rcNotes').value = it.notes || '';
+    document.getElementById('rcFormTitle').textContent = 'Ubah: ' + it.name; document.getElementById('rcSaveBtn').textContent = 'Simpan perubahan'; document.getElementById('rcCancelEdit').style.display = '';
+    window.scrollTo({top:0, behavior:'smooth'}); return;
+  }
+  let res;
+  if(act === 'skip'){
+    if(!confirm(`Lewati ${it.name} untuk ${rcPeriodLabel(b.dataset.period)}? (tidak dibayar bulan ini)`)) return;
+    res = await sb.from('recurring_expenses').update({ skipped: [...(it.skipped||'').split(',').filter(Boolean), b.dataset.period].join(',') }).eq('id', id);
+  } else if(act === 'off' || act === 'on'){
+    res = await sb.from('recurring_expenses').update({ is_active: act === 'on' }).eq('id', id);
+  } else if(act === 'del'){
+    if(currentRole !== 'owner' || !confirm(`Hapus jadwal "${it.name}"? Transaksi yang sudah tercatat tidak ikut terhapus.`)) return;
+    res = await sb.from('recurring_expenses').delete().eq('id', id);
+  }
+  if(res && res.error){ alert('Gagal: ' + res.error.message); return; }
+  logActivity(act === 'del' ? 'delete' : 'update', 'recurring_expenses', `${act} ${it.name}`);
+  await loadAllData(); renderAll();
+});
+
 function renderAll(){
   // Setiap bagian dirender terpisah: kalau satu bagian error, bagian lain tetap tampil dan errornya ditampilkan di bagian atas
   const errs = [];
@@ -2584,7 +2762,7 @@ function renderAll(){
   run('Dashboard', renderDashboard); run('Transaksi', renderTransactions); run('Laporan', renderLaporan);
   run('Piutang', renderReceivables); run('Utang', renderPayables); run('Kasbon', renderKasbon); run('Rekomendasi', renderRekomendasiPelunasan);
   run('Anggaran', renderBudgets); run('Gaji', renderPayroll); run('Tabungan', renderSavings); run('Proyeksi', renderProjection);
-  run('Akuntansi', renderAkuntansi); run('Akun pindah dana', fillTransferAccounts); run('Akun transaksi', fillTxAccountOptions); run('Saldo akun', renderDashAccounts); run('Form pembayaran', fillLinkedRecordOptions); run('Dashboard periode', renderDashPeriods);
+  run('Akuntansi', renderAkuntansi); run('Pengeluaran rutin', renderRutin); run('Akun pindah dana', fillTransferAccounts); run('Akun transaksi', fillTxAccountOptions); run('Saldo akun', renderDashAccounts); run('Form pembayaran', fillLinkedRecordOptions); run('Dashboard periode', renderDashPeriods);
   if(currentRole === 'owner'){
     if(bsRange) run('Hapus data', bsRender);
     run('Perbandingan', renderComparison); run('Pengguna', renderUsers);
@@ -3034,7 +3212,8 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
     date, description: desc, amount, category, created_by: currentUsername,
     payment_method: storedMethod, bank, proof_path: proofPath,
     saving_type: paymentMethod === 'tabungan' ? savingType : null,
-    loan_party: loanParty || null
+    loan_party: loanParty || null,
+    ...(rcPending ? { recurring_id: rcPending.id, recurring_period: rcPending.period } : {})
   }).select();
   if(error){ btn.disabled = false; statusEl.textContent = ''; alert('Gagal menyimpan: ' + error.message); return; }
 
@@ -3055,6 +3234,7 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
     if(payError){ alert('Kas tercatat, tapi gagal menyimpan riwayat pembayaran: ' + payError.message); }
   }
 
+  rcPending = null; rcUpdateNote();
   btn.disabled = false; statusEl.textContent = '';
   document.getElementById('tDate').value = ''; document.getElementById('tDesc').value = '';
   document.getElementById('tCategory').value = ''; document.getElementById('tAmount').value = '';
