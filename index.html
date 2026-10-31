@@ -174,6 +174,7 @@
     <button class="tab owner-only" data-view="perbandingan">Perbandingan</button>
     <button class="tab owner-only" data-view="pengguna">Pengguna</button>
     <button class="tab owner-only" data-view="log">Log Aktivitas</button>
+    <button class="tab owner-only" data-view="bersih">Hapus Data</button>
   </div>
 
   <div class="view active" id="view-dashboard">
@@ -964,6 +965,29 @@
     </div>
   </div>
 
+  <div class="view owner-only" id="view-bersih">
+    <div class="card">
+      <h3>Hapus data yang tidak dipakai (mis. data trial)</h3>
+      <p class="helper" style="margin-top:0;">Khusus Owner. Pilih rentang tanggal, tampilkan data, lalu centang <b>per hari</b> (otomatis semua transaksi hari itu) atau <b>per transaksi</b>. Sebelum dihapus, aplikasi menampilkan dampaknya ke saldo kas &amp; laba dan <b>mengunduh cadangan Excel otomatis</b>. Data yang sudah dihapus tidak bisa dikembalikan.</p>
+      <div class="form-grid">
+        <div><label class="helper">Dari tanggal</label><input type="date" id="bsFrom"></div>
+        <div><label class="helper">Sampai tanggal</label><input type="date" id="bsTo"></div>
+        <div style="display:flex; gap:6px; align-items:flex-end;"><button class="primary" id="bsLoadBtn">Tampilkan data</button></div>
+      </div>
+      <div class="login-error" id="bsError"></div>
+    </div>
+    <div id="bsLists"></div>
+    <div class="card" id="bsSummaryCard" style="margin-top:16px; display:none; border-color:var(--red);">
+      <h3>Ringkasan penghapusan</h3>
+      <div id="bsSummary"></div>
+      <div class="form-grid" style="margin-top:12px;">
+        <input type="text" id="bsConfirm" placeholder='Ketik HAPUS untuk konfirmasi' autocomplete="off">
+        <button class="primary" id="bsDeleteBtn" style="background:var(--red);" disabled>Cadangkan &amp; hapus</button>
+      </div>
+      <p class="helper" id="bsProgress"></p>
+    </div>
+  </div>
+
   <div class="view" id="view-proyeksi">
     <div class="card">
       <div class="flex-between">
@@ -1147,7 +1171,7 @@ function stopInactivityTimer(){
   document.addEventListener(evt, resetInactivityTimer, {passive:true});
 });
 
-const OWNER_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','akuntansi','proyeksi','perbandingan','pengguna','log'];
+const OWNER_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','akuntansi','proyeksi','perbandingan','pengguna','log','bersih'];
 const ACCOUNTING_TABS = ['dashboard','transaksi','laporan','piutang','anggaran','akuntansi'];
 
 function applyRoleUI(){
@@ -2150,8 +2174,8 @@ function dpBuild(gran){
   const cfg = DP_CFG[gran], {from,to} = dpRange(gran);
   const inRange = d => (!from || d >= from) && (!to || d <= to);
   const txBy = {}, svBy = {};
-  data.transactions.filter(t=>inRange(t.date)).forEach(t=>{ (txBy[cfg.key(t.date)] = txBy[cfg.key(t.date)] || []).push(t); });
-  data.savings.filter(x=>inRange(x.date)).forEach(x=>{ (svBy[cfg.key(x.date)] = svBy[cfg.key(x.date)] || []).push(x); });
+  data.transactions.filter(t=>t.date && inRange(t.date)).forEach(t=>{ (txBy[cfg.key(t.date)] = txBy[cfg.key(t.date)] || []).push(t); });
+  data.savings.filter(x=>x.date && inRange(x.date)).forEach(x=>{ (svBy[cfg.key(x.date)] = svBy[cfg.key(x.date)] || []).push(x); });
   const keys = [...new Set([...Object.keys(txBy), ...Object.keys(svBy)])].sort().reverse();
   const rows = keys.map(k=>{
     const txs = txBy[k] || [], svs = svBy[k] || [];
@@ -2160,7 +2184,7 @@ function dpBuild(gran){
       masuk: txs.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0), keluar: Math.abs(txs.filter(t=>t.amount<0).reduce((a,t)=>a+t.amount,0)),
       pendapatan:f.totalIncome, pengeluaran:f.totalExpense, laba:f.netProfit, kas:f.cashBalance, cashMasuk:f.cashIncome, trfMasuk:f.transferIncome };
   });
-  const filteredTx = data.transactions.filter(t=>inRange(t.date)), filteredSv = data.savings.filter(x=>inRange(x.date));
+  const filteredTx = data.transactions.filter(t=>t.date && inRange(t.date)), filteredSv = data.savings.filter(x=>x.date && inRange(x.date));
   return { rows, total: financialTotalsFor(filteredTx, filteredSv), from, to };
 }
 function dpDetailHtml(r, cols){
@@ -2206,7 +2230,7 @@ function renderDashPeriods(){
   const yearSel = document.getElementById('dpMonthYear');
   if(yearSel){
     const cur = yearSel.value;
-    const years = [...new Set(data.transactions.map(t=>t.date.slice(0,4)))].sort().reverse();
+    const years = [...new Set(data.transactions.filter(t=>t.date).map(t=>t.date.slice(0,4)))].sort().reverse();
     yearSel.innerHTML = '<option value="">Semua tahun</option>' + years.map(y=>`<option value="${y}">${y}</option>`).join('');
     if(cur && years.includes(cur)) yearSel.value = cur;
   }
@@ -2249,9 +2273,216 @@ function dpExport(gran, kind){
   }
 }
 
+// ---------- Hapus data massal (Owner) ----------
+const bsSel = { tx:new Set(), sv:new Set(), as:new Set(), je:new Set(), inv:new Set(), bsl:new Set() };
+const bsOpen = new Set();
+let bsRange = null;
+function bsInRange(d){ return bsRange && d >= bsRange.from && d <= bsRange.to; }
+function bsClosure(sel){
+  // Menghapus transaksi pinjaman otomatis menghapus pembayarannya -> transaksi pembayaran ikut dipilih
+  const all = new Set(sel); let changed = true;
+  while(changed){
+    changed = false;
+    [[data.receivables,data.receivablePayments,'receivable_id'],[data.payables,data.payablePayments,'payable_id'],[data.kasbon,data.kasbonPayments,'kasbon_id']].forEach(([rows,pays,f])=>{
+      rows.filter(r=>all.has(r.related_transaction_id)).forEach(r=>{
+        pays.filter(p=>p[f]===r.id && p.related_transaction_id != null && !all.has(p.related_transaction_id)).forEach(p=>{ all.add(p.related_transaction_id); changed = true; });
+      });
+    });
+  }
+  return all;
+}
+function bsPlan(){
+  const txSel = bsClosure(bsSel.tx);
+  const loans = {
+    ar: data.receivables.filter(r=>txSel.has(r.related_transaction_id)),
+    ap: data.payables.filter(r=>txSel.has(r.related_transaction_id)),
+    kb: data.kasbon.filter(r=>txSel.has(r.related_transaction_id))
+  };
+  const ids = (arr)=>new Set(arr.map(x=>x.id));
+  const arI = ids(loans.ar), apI = ids(loans.ap), kbI = ids(loans.kb);
+  const pays = {
+    ar: data.receivablePayments.filter(p=>txSel.has(p.related_transaction_id) || arI.has(p.receivable_id)),
+    ap: data.payablePayments.filter(p=>txSel.has(p.related_transaction_id) || apI.has(p.payable_id)),
+    kb: data.kasbonPayments.filter(p=>txSel.has(p.related_transaction_id) || kbI.has(p.kasbon_id))
+  };
+  const svLinked = data.savings.filter(x=>txSel.has(x.related_transaction_id));
+  const svManual = data.savings.filter(x=>bsSel.sv.has(x.id) && !txSel.has(x.related_transaction_id));
+  const txs = data.transactions.filter(t=>txSel.has(t.id));
+  const assets = data.assets.filter(a=>bsSel.as.has(a.id));
+  const journals = (data.journalEntries||[]).filter(j=>bsSel.je.has(j.id));
+  const invoices = (data.invoices||[]).filter(v=>bsSel.inv.has(v.id));
+  const invPays = (data.invoicePayments||[]).filter(p=>bsSel.inv.has(p.invoice_id));
+  const bankLines = (data.bankLines||[]).filter(b=>bsSel.bsl.has(b.id));
+  const delSv = new Set([...svLinked, ...svManual].map(x=>x.id));
+  const remTx = data.transactions.filter(t=>!txSel.has(t.id)), remSv = data.savings.filter(x=>!delSv.has(x.id));
+  const total = txs.length + svManual.length + assets.length + journals.length + invoices.length + bankLines.length;
+  return { txSel, txs, extraTx: txs.length - bsSel.tx.size, loans, pays, svLinked, svManual, assets, journals, invoices, invPays, bankLines, remTx, remSv, total };
+}
+function bsRender(){
+  const wrap = document.getElementById('bsLists'); if(!wrap) return;
+  if(!bsRange){ wrap.innerHTML = ''; document.getElementById('bsSummaryCard').style.display = 'none'; return; }
+  // buang pilihan yang datanya sudah tidak ada (mis. berubah dari akun lain)
+  const alive = { tx:new Set(data.transactions.map(x=>x.id)), sv:new Set(data.savings.map(x=>x.id)), as:new Set(data.assets.map(x=>x.id)), je:new Set((data.journalEntries||[]).map(x=>x.id)), inv:new Set((data.invoices||[]).map(x=>x.id)), bsl:new Set((data.bankLines||[]).map(x=>x.id)) };
+  Object.keys(bsSel).forEach(k=>[...bsSel[k]].forEach(id=>{ if(!alive[k].has(id)) bsSel[k].delete(id); }));
+
+  const txs = data.transactions.filter(t=>bsInRange(t.date)).sort((a,b)=>b.date.localeCompare(a.date) || b.id-a.id);
+  const days = {}; txs.forEach(t=>{ (days[t.date] = days[t.date] || []).push(t); });
+  const dayKeys = Object.keys(days).sort().reverse();
+  let h = `<div class="card" style="margin-top:16px;"><div class="flex-between"><h3 style="margin:0;">Transaksi (${txs.length}) · ${bsRange.from} s.d. ${bsRange.to}</h3>
+    <div style="display:flex; gap:6px;"><button class="ghost" data-bsall="tx">Pilih semua</button><button class="ghost" data-bsnone="tx">Kosongkan</button></div></div>`;
+  h += txs.length ? '<div style="margin-top:10px;">' + dayKeys.map(dk=>{
+    const list = days[dk]; const selN = list.filter(t=>bsSel.tx.has(t.id)).length; const open = bsOpen.has(dk);
+    const masuk = list.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0), keluar = Math.abs(list.filter(t=>t.amount<0).reduce((a,t)=>a+t.amount,0));
+    return `<div style="border-top:1px solid var(--border); padding:6px 0;">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <input type="checkbox" style="width:auto;" data-bsday="${dk}" ${selN===list.length?'checked':''} ${selN>0&&selN<list.length?'data-indet="1"':''}>
+        <button class="del-btn" style="color:var(--text);" data-bsopen="${dk}">${open?'▾':'▸'} <b>${dk}</b></button>
+        <span class="helper" style="margin:0;">${list.length} transaksi · masuk ${formatCurrency(masuk)} · keluar ${formatCurrency(keluar)}${selN?` · <b>${selN} dipilih</b>`:''}</span>
+      </div>` + (open ? `<div style="overflow-x:auto; margin:6px 0 4px 28px;"><table><tbody>` + list.map(t=>`<tr>
+        <td style="width:30px;"><input type="checkbox" style="width:auto;" data-bssel="tx" data-id="${t.id}" ${bsSel.tx.has(t.id)?'checked':''}></td>
+        <td>${escapeHtml(t.description||'')}</td><td>${escapeHtml(t.category||'-')}</td><td>${escapeHtml(formatPaymentMethodText(t))}</td>
+        <td class="right ${t.amount>=0?'income':'expense'}">${formatCurrency(t.amount)}</td><td>${escapeHtml(t.created_by||'-')}</td></tr>`).join('') + '</tbody></table></div>' : '') + '</div>';
+  }).join('') + '</div>' : '<p class="empty">Tidak ada transaksi pada rentang ini</p>';
+  h += '</div>';
+
+  const section = (title, key, items, cols, rowFn)=> !items.length ? '' : `<div class="card" style="margin-top:16px;"><div class="flex-between"><h3 style="margin:0;">${title} (${items.length})</h3>
+    <div style="display:flex; gap:6px;"><button class="ghost" data-bsall="${key}">Pilih semua</button><button class="ghost" data-bsnone="${key}">Kosongkan</button></div></div>
+    <div style="overflow-x:auto; margin-top:8px;"><table><thead><tr><th></th>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>` +
+    items.map(x=>`<tr><td style="width:30px;"><input type="checkbox" style="width:auto;" data-bssel="${key}" data-id="${x.id}" ${bsSel[key].has(x.id)?'checked':''}></td>${rowFn(x)}</tr>`).join('') + '</tbody></table></div></div>';
+  const txIdSet = new Set(data.transactions.map(t=>t.id));
+  h += section('Setoran tabungan manual (tidak terhubung ke transaksi)', 'sv', data.savings.filter(x=>bsInRange(x.date) && !txIdSet.has(x.related_transaction_id)).sort((a,b)=>b.date.localeCompare(a.date)), ['Tanggal','Jenis','Jumlah','Catatan'], x=>`<td>${x.date}</td><td>${escapeHtml(x.jenis)}</td><td class="right">${formatCurrency(x.amount)}</td><td>${escapeHtml(x.notes||'')}</td>`);
+  h += section('Aset lainnya', 'as', data.assets.filter(x=>bsInRange(x.date)), ['Tanggal','Nama','Nilai'], x=>`<td>${x.date}</td><td>${escapeHtml(x.name)}</td><td class="right">${formatCurrency(x.amount)}</td>`);
+  h += section('Jurnal manual', 'je', (data.journalEntries||[]).filter(x=>bsInRange(x.date)), ['Tanggal','Bukti','Keterangan'], x=>`<td>${x.date}</td><td>${escapeHtml(x.ref||'')}</td><td>${escapeHtml(x.description)}</td>`);
+  h += section('Faktur (pembayarannya ikut terhapus)', 'inv', (data.invoices||[]).filter(x=>bsInRange(x.date)), ['Tanggal','No.','Pihak','Nominal'], x=>`<td>${x.date}</td><td>${escapeHtml(x.number)}</td><td>${escapeHtml(x.party)}</td><td class="right">${formatCurrency(x.amount)}</td>`);
+  h += section('Baris rekening koran', 'bsl', (data.bankLines||[]).filter(x=>bsInRange(x.date)), ['Tanggal','Bank','Keterangan','Nominal'], x=>`<td>${x.date}</td><td>${escapeHtml(x.bank)}</td><td>${escapeHtml(x.description||'')}</td><td class="right">${x.direction==='masuk'?'+':'-'}${formatCurrency(x.amount)}</td>`);
+  wrap.innerHTML = h;
+  wrap.querySelectorAll('input[data-indet]').forEach(el=>{ el.indeterminate = true; });
+  bsRenderSummary();
+}
+function bsRenderSummary(){
+  const card = document.getElementById('bsSummaryCard'), P = bsPlan();
+  card.style.display = '';
+  const before = financialTotals(), after = financialTotalsFor(P.remTx, P.remSv);
+  const row = (label, a, b)=>`<tr><td>${label}</td><td class="right">${formatCurrency(a)}</td><td class="right">${formatCurrency(b)}</td><td class="right ${b-a<0?'expense':'income'}">${b-a===0?'-':formatCurrency(b-a)}</td></tr>`;
+  const loanN = P.loans.ar.length + P.loans.ap.length + P.loans.kb.length, payN = P.pays.ar.length + P.pays.ap.length + P.pays.kb.length;
+  document.getElementById('bsSummary').innerHTML = P.total === 0 ? '<p class="helper" style="margin:0;">Belum ada data yang dipilih.</p>' : `
+    <ul style="margin:0 0 10px 18px; padding:0; font-size:13px;">
+      <li><b>${P.txs.length}</b> transaksi${P.extraTx>0?` (termasuk <b>${P.extraTx}</b> transaksi pembayaran yang ikut terhapus karena pinjamannya dihapus)`:''}</li>
+      ${P.svLinked.length+P.svManual.length?`<li><b>${P.svLinked.length+P.svManual.length}</b> catatan tabungan (${P.svLinked.length} terhubung transaksi, ${P.svManual.length} setoran manual)</li>`:''}
+      ${loanN?`<li><b>${loanN}</b> catatan piutang/utang/kasbon beserta <b>${payN}</b> riwayat pembayarannya</li>`:(payN?`<li><b>${payN}</b> riwayat pembayaran piutang/utang/kasbon</li>`:'')}
+      ${P.assets.length?`<li><b>${P.assets.length}</b> aset lainnya</li>`:''}${P.journals.length?`<li><b>${P.journals.length}</b> jurnal manual</li>`:''}
+      ${P.invoices.length?`<li><b>${P.invoices.length}</b> faktur + ${P.invPays.length} pembayaran</li>`:''}${P.bankLines.length?`<li><b>${P.bankLines.length}</b> baris rekening koran</li>`:''}
+    </ul>
+    <table><thead><tr><th>Dampak ke Dashboard</th><th class="right">Sekarang</th><th class="right">Setelah dihapus</th><th class="right">Selisih</th></tr></thead><tbody>
+      ${row('Saldo kas', before.cashBalance, after.cashBalance)}${row('Total pendapatan', before.totalIncome, after.totalIncome)}${row('Total pengeluaran', before.totalExpense, after.totalExpense)}${row('Laba bersih', before.netProfit, after.netProfit)}${row('Tabungan perusahaan', before.totalSavings, after.totalSavings)}
+    </tbody></table>`;
+  document.getElementById('bsDeleteBtn').disabled = !(P.total > 0 && document.getElementById('bsConfirm').value.trim() === 'HAPUS');
+}
+document.getElementById('bsLoadBtn').addEventListener('click', ()=>{
+  const from = document.getElementById('bsFrom').value, to = document.getElementById('bsTo').value, err = document.getElementById('bsError');
+  err.style.display = 'none';
+  if(!from || !to){ err.textContent = 'Isi tanggal "Dari" dan "Sampai".'; err.style.display = 'block'; return; }
+  if(from > to){ err.textContent = 'Tanggal "Dari" tidak boleh setelah "Sampai".'; err.style.display = 'block'; return; }
+  bsRange = {from, to}; Object.values(bsSel).forEach(x=>x.clear()); bsOpen.clear(); document.getElementById('bsConfirm').value = '';
+  bsRender();
+});
+document.getElementById('bsConfirm').addEventListener('input', bsRenderSummary);
+document.getElementById('view-bersih').addEventListener('change', (e)=>{
+  const t = e.target;
+  if(t.dataset.bsday){
+    data.transactions.filter(x=>x.date===t.dataset.bsday).forEach(x=>{ if(t.checked) bsSel.tx.add(x.id); else bsSel.tx.delete(x.id); });
+    bsRender();
+  } else if(t.dataset.bssel){
+    const id = parseInt(t.dataset.id,10); if(t.checked) bsSel[t.dataset.bssel].add(id); else bsSel[t.dataset.bssel].delete(id);
+    bsRender();
+  }
+});
+document.getElementById('view-bersih').addEventListener('click', (e)=>{
+  const o = e.target.closest('[data-bsopen]');
+  if(o){ const k = o.dataset.bsopen; if(bsOpen.has(k)) bsOpen.delete(k); else bsOpen.add(k); bsRender(); return; }
+  const all = e.target.closest('[data-bsall]'), none = e.target.closest('[data-bsnone]');
+  if(all || none){
+    const key = (all||none).dataset.bsall || (all||none).dataset.bsnone;
+    const src = { tx:()=>data.transactions.filter(x=>bsInRange(x.date)), sv:()=>data.savings.filter(x=>bsInRange(x.date) && !data.transactions.some(t=>t.id===x.related_transaction_id)), as:()=>data.assets.filter(x=>bsInRange(x.date)), je:()=>(data.journalEntries||[]).filter(x=>bsInRange(x.date)), inv:()=>(data.invoices||[]).filter(x=>bsInRange(x.date)), bsl:()=>(data.bankLines||[]).filter(x=>bsInRange(x.date)) }[key]();
+    src.forEach(x=>{ if(all) bsSel[key].add(x.id); else bsSel[key].delete(x.id); });
+    bsRender();
+  }
+});
+async function bsDeleteIn(table, col, ids){
+  for(let i = 0; i < ids.length; i += 100){
+    const { error } = await sb.from(table).delete().in(col, ids.slice(i, i+100));
+    if(error) throw new Error(table + ': ' + error.message);
+  }
+}
+document.getElementById('bsDeleteBtn').addEventListener('click', async ()=>{
+  if(currentRole !== 'owner'){ alert('Hanya Owner yang boleh menghapus data.'); return; }
+  const P = bsPlan(); if(P.total === 0) return;
+  if(document.getElementById('bsConfirm').value.trim() !== 'HAPUS') return;
+  if(!confirm(`Hapus permanen ${P.total} data yang dipilih? Cadangan Excel akan diunduh lebih dulu.`)) return;
+  const btn = document.getElementById('bsDeleteBtn'), prog = document.getElementById('bsProgress');
+  btn.disabled = true;
+  try{
+    // 1) Cadangan Excel (dibatalkan kalau gagal)
+    prog.textContent = 'Membuat cadangan Excel...';
+    const wb = XLSX.utils.book_new();
+    const sheet = (name, rows)=>{ if(rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name); };
+    sheet('Transaksi', P.txs.map(t=>({ID:t.id, Tanggal:t.date, Deskripsi:t.description, Kategori:t.category||'', Metode:formatPaymentMethodText(t), 'Jumlah (Rp)':t.amount, Pihak:t.loan_party||'', 'Dicatat oleh':t.created_by||'' })));
+    sheet('Tabungan', [...P.svLinked, ...P.svManual].map(x=>({ID:x.id, Tanggal:x.date, Jenis:x.jenis, 'Jumlah (Rp)':x.amount, Catatan:x.notes||'', Sumber:x.source||'' })));
+    sheet('Piutang', P.loans.ar.map(x=>({ID:x.id, Tanggal:x.date, Nama:x.name, 'Jumlah (Rp)':x.amount}))); sheet('Utang', P.loans.ap.map(x=>({ID:x.id, Tanggal:x.date, Nama:x.name, 'Jumlah (Rp)':x.amount}))); sheet('Kasbon', P.loans.kb.map(x=>({ID:x.id, Tanggal:x.date, Nama:x.employee_name, 'Jumlah (Rp)':x.amount})));
+    sheet('Pembayaran', [...P.pays.ar.map(x=>({Jenis:'Piutang', ...x})), ...P.pays.ap.map(x=>({Jenis:'Utang', ...x})), ...P.pays.kb.map(x=>({Jenis:'Kasbon', ...x}))]);
+    sheet('Aset', P.assets.map(x=>({ID:x.id, Tanggal:x.date, Nama:x.name, 'Nilai (Rp)':x.amount})));
+    sheet('Jurnal manual', P.journals.flatMap(j=>(data.journalLines||[]).filter(l=>l.entry_id===j.id).map(l=>({Tanggal:j.date, Bukti:j.ref||'', Keterangan:j.description, Akun:l.account_code, Debit:l.debit, Kredit:l.credit}))));
+    sheet('Faktur', P.invoices.map(v=>({ID:v.id, Jenis:v.type, No:v.number, Pihak:v.party, Tanggal:v.date, 'Nominal (Rp)':v.amount}))); sheet('Pembayaran faktur', P.invPays.map(x=>({...x})));
+    sheet('Rekening koran', P.bankLines.map(x=>({ID:x.id, Bank:x.bank, Tanggal:x.date, Keterangan:x.description||'', Arah:x.direction, 'Nominal (Rp)':x.amount})));
+    const stamp = new Date().toISOString().slice(0,16).replace(/[-:T]/g,'');
+    XLSX.writeFile(wb, `Cadangan-sebelum-hapus-${stamp}.xlsx`);
+
+    // 2) Hapus berurutan: riwayat pembayaran -> pinjaman -> tabungan -> transaksi -> sisanya
+    prog.textContent = 'Menghapus...';
+    const idsOf = (arr)=>arr.map(x=>x.id);
+    await bsDeleteIn('receivable_payments','id',idsOf(P.pays.ar)); await bsDeleteIn('payable_payments','id',idsOf(P.pays.ap)); await bsDeleteIn('kasbon_payments','id',idsOf(P.pays.kb));
+    await bsDeleteIn('receivables','id',idsOf(P.loans.ar)); await bsDeleteIn('payables','id',idsOf(P.loans.ap)); await bsDeleteIn('kasbon','id',idsOf(P.loans.kb));
+    await bsDeleteIn('savings','id',idsOf([...P.svLinked, ...P.svManual]));
+    // rekening koran yang tadinya cocok dengan data yang dihapus -> kembali "belum cocok"
+    const txIds = idsOf(P.txs), invPayIds = idsOf(P.invPays);
+    for(let i=0;i<txIds.length;i+=100){ await sb.from('bank_statement_lines').update({matched_type:null, matched_id:null, matched_at:null}).eq('matched_type','transaction').in('matched_id', txIds.slice(i,i+100)); }
+    for(let i=0;i<invPayIds.length;i+=100){ await sb.from('bank_statement_lines').update({matched_type:null, matched_id:null, matched_at:null}).eq('matched_type','invoice_payment').in('matched_id', invPayIds.slice(i,i+100)); }
+    await bsDeleteIn('transactions','id',txIds);
+    await bsDeleteIn('assets','id',idsOf(P.assets)); await bsDeleteIn('journal_entries','id',idsOf(P.journals));
+    await bsDeleteIn('invoices','id',idsOf(P.invoices)); await bsDeleteIn('bank_statement_lines','id',idsOf(P.bankLines));
+    // bukti transfer di storage (best effort)
+    const proofs = P.txs.map(t=>t.proof_path).filter(Boolean);
+    if(proofs.length){ try{ await sb.storage.from('bukti-transfer').remove(proofs); }catch(e){} }
+
+    logActivity('delete', 'transactions', `Hapus massal ${bsRange.from} s.d. ${bsRange.to}: ${P.txs.length} transaksi, ${P.svLinked.length+P.svManual.length} tabungan, ${P.loans.ar.length+P.loans.ap.length+P.loans.kb.length} pinjaman, ${P.assets.length} aset, ${P.journals.length} jurnal, ${P.invoices.length} faktur, ${P.bankLines.length} rekening koran`);
+    Object.values(bsSel).forEach(x=>x.clear()); document.getElementById('bsConfirm').value = '';
+    await loadAllData(); renderAll(); bsRender();
+    prog.textContent = `Selesai: ${P.total} data dihapus. Cadangan Excel sudah terunduh.`;
+  }catch(e){
+    prog.textContent = '';
+    alert('Penghapusan berhenti karena error: ' + (e.message || e) + '\n\nSebagian data mungkin sudah terhapus. Cadangan Excel sudah terunduh. Muat ulang halaman lalu cek hasilnya.');
+    await loadAllData(); renderAll(); bsRender();
+  }finally{ bsRenderSummary(); }
+});
+
 function renderAll(){
-  renderDashboard(); renderTransactions(); renderLaporan(); renderReceivables(); renderPayables(); renderKasbon(); renderRekomendasiPelunasan(); renderBudgets(); renderPayroll(); renderSavings(); renderProjection(); renderAkuntansi(); fillLinkedRecordOptions(); renderDashPeriods();
-  if(currentRole === 'owner'){ renderComparison(); renderUsers(); }
+  // Setiap bagian dirender terpisah: kalau satu bagian error, bagian lain tetap tampil dan errornya ditampilkan di bagian atas
+  const errs = [];
+  const run = (name, fn)=>{ try{ fn(); }catch(e){ console.error('Gagal render '+name, e); errs.push(name + ': ' + (e && e.message ? e.message : e)); } };
+  run('Dashboard', renderDashboard); run('Transaksi', renderTransactions); run('Laporan', renderLaporan);
+  run('Piutang', renderReceivables); run('Utang', renderPayables); run('Kasbon', renderKasbon); run('Rekomendasi', renderRekomendasiPelunasan);
+  run('Anggaran', renderBudgets); run('Gaji', renderPayroll); run('Tabungan', renderSavings); run('Proyeksi', renderProjection);
+  run('Akuntansi', renderAkuntansi); run('Form pembayaran', fillLinkedRecordOptions); run('Dashboard periode', renderDashPeriods);
+  if(currentRole === 'owner'){
+    if(bsRange) run('Hapus data', bsRender);
+    run('Perbandingan', renderComparison); run('Pengguna', renderUsers);
+  }
+  let box = document.getElementById('renderErrorBox');
+  if(errs.length){
+    if(!box){ box = document.createElement('div'); box.id = 'renderErrorBox'; box.className = 'login-error'; box.style.margin = '0 0 14px'; document.getElementById('mainApp').insertBefore(box, document.querySelector('#mainApp .tabs')); }
+    box.style.display = 'block';
+    box.innerHTML = '<b>Sebagian tampilan gagal dimuat</b> (bagian lain tetap berfungsi). Kirim pesan ini ke pengembang:<br>' + errs.map(escapeHtml).join('<br>');
+  } else if(box){ box.style.display = 'none'; }
 }
 
 function exportExcel(){
@@ -2386,6 +2617,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
     if(tab.dataset.view === 'perbandingan') renderComparison();
     if(tab.dataset.view === 'pengguna') renderUsers();
     if(tab.dataset.view === 'log') renderAuditLog();
+    if(tab.dataset.view === 'bersih') bsRender();
   });
 });
 
@@ -3118,7 +3350,7 @@ function akBuildAutoJournal(d){
   const out = [];
   const add = (key, date, ref, desc, lines, origin)=>{
     const ls = lines.filter(l => l[1] > 0 || l[2] > 0).map(l => ({a:l[0], d:l[1]||0, k:l[2]||0}));
-    if(ls.length) out.push({key, date, ref, desc, source:'auto', lines: ls, origin});
+    if(ls.length) out.push({key, date: date || '1970-01-01', ref, desc, source:'auto', lines: ls, origin}); // data lama tanpa tanggal ditaruh di awal (saldo awal)
   };
   const txIds = new Set(d.transactions.map(t=>t.id));
   const linked = (row)=> row.related_transaction_id != null && txIds.has(row.related_transaction_id);
@@ -3215,7 +3447,7 @@ function akBuildManualJournal(d){
 
 function akAllEntries(d){
   return [...akBuildAutoJournal(d), ...akBuildInvoiceJournal(d), ...akBuildManualJournal(d)]
-    .sort((x,y)=> x.date===y.date ? String(x.key).localeCompare(String(y.key)) : x.date.localeCompare(y.date));
+    .sort((x,y)=>{ const a = x.date || '', b = y.date || ''; return a===b ? String(x.key).localeCompare(String(y.key)) : a.localeCompare(b); });
 }
 
 // Jumlah debit/kredit per akun; periode opsional [from, to] (string YYYY-MM-DD, inklusif)
