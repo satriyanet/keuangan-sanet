@@ -442,7 +442,7 @@
         <select id="assetDir"><option value="add">Tambah aset</option><option value="sub">Kurangi aset (dijual/dihapus)</option></select>
         <input type="number" id="assetAmount" placeholder="Nilai (Rp)" min="0">
         <input type="text" id="assetNotes" placeholder="Catatan (opsional)">
-        <button class="primary" id="addAssetBtn">Tambah</button>
+        <button class="primary" id="addAssetBtn">Tambah</button><button class="ghost" id="assetCancelEdit" style="display:none;">Batal</button>
       </div>
       <div style="overflow-x:auto; margin-top:10px;">
         <table>
@@ -1742,7 +1742,7 @@ function renderAssets(){
         <td class="right" style="font-weight:600; color:${a.amount<0?'var(--red)':'var(--text)'};">${formatCurrency(a.amount)}</td>
         <td>${escapeHtml(a.notes||'-')}</td>
         <td>${escapeHtml(a.created_by||'-')}</td>
-        <td class="right"><button class="del-btn" data-id="${a.id}" data-action="delAsset">Hapus</button></td>
+        <td class="right"><button class="ghost" data-action="editAsset" data-id="${a.id}" style="padding:4px 10px; font-size:12px;">Ubah</button> <button class="del-btn" data-id="${a.id}" data-action="delAsset">Hapus</button></td>
       </tr>
     `).join('');
   }
@@ -3759,6 +3759,13 @@ document.getElementById('addSavingsBtn').addEventListener('click', async ()=>{
 
 document.getElementById('projMonths').addEventListener('input', renderProjection);
 
+let assetEditingId = null;
+function assetResetForm(){
+  assetEditingId = null;
+  ['assetDate','assetName','assetAmount','assetNotes'].forEach(id=>document.getElementById(id).value = '');
+  document.getElementById('assetDir').value = 'add'; document.getElementById('addAssetBtn').textContent = 'Tambah'; document.getElementById('assetCancelEdit').style.display = 'none';
+}
+document.getElementById('assetCancelEdit').addEventListener('click', assetResetForm);
 document.getElementById('addAssetBtn').addEventListener('click', async ()=>{
   const date = document.getElementById('assetDate').value || new Date().toISOString().slice(0,10);
   const name = document.getElementById('assetName').value.trim();
@@ -3769,12 +3776,12 @@ document.getElementById('addAssetBtn').addEventListener('click', async ()=>{
   const btn = document.getElementById('addAssetBtn');
   btn.disabled = true;
   try{
-    const { error } = await sb.from('assets').insert({ date, name, amount, notes, created_by: currentUsername });
+    const editing = assetEditingId !== null, before = editing ? data.assets.find(x=>x.id===assetEditingId) : null;
+    const { error } = editing ? await sb.from('assets').update({ date, name, amount, notes }).eq('id', assetEditingId) : await sb.from('assets').insert({ date, name, amount, notes, created_by: currentUsername });
     if(error) throw error;
-    document.getElementById('assetDate').value = ''; document.getElementById('assetName').value = '';
-    document.getElementById('assetAmount').value = ''; document.getElementById('assetNotes').value = '';
-    flashSaved(); await loadAllData(); renderLaporan();
-    logActivity('create', 'assets', `${amount<0?'Pengurangan':'Penambahan'} aset ${name} ${formatCurrency(amount)}`);
+    assetResetForm();
+    flashSaved(); await loadAllData(); renderAll();
+    logActivity(editing ? 'update' : 'create', 'assets', editing ? `Ubah aset ${before ? before.name + ' ' + formatCurrency(before.amount) : ''} -> ${name} ${formatCurrency(amount)}` : `${amount<0?'Pengurangan':'Penambahan'} aset ${name} ${formatCurrency(amount)}`);
   }catch(e){
     alert('Gagal menyimpan: ' + (e.message || e));
   }finally{
@@ -3893,6 +3900,13 @@ document.body.addEventListener('click', async (e)=>{
     if(rec && rec.related_transaction_id){ await sb.from('transactions').delete().eq('id', rec.related_transaction_id); }
     const { error } = await sb.from('kasbon_payments').delete().eq('id', id);
     if(!error){ await loadAllData(); renderKasbon(); renderDashboard(); logActivity('delete', 'kasbon', `Pembayaran kasbon dihapus (id ${id})`); }
+  } else if(action === 'editAsset'){
+    const a = data.assets.find(x=>x.id===parseInt(btn.dataset.id,10)); if(!a) return;
+    assetEditingId = a.id;
+    document.getElementById('assetDate').value = a.date || ''; document.getElementById('assetName').value = a.name;
+    document.getElementById('assetDir').value = a.amount < 0 ? 'sub' : 'add'; document.getElementById('assetAmount').value = Math.abs(a.amount);
+    document.getElementById('assetNotes').value = a.notes || ''; document.getElementById('addAssetBtn').textContent = 'Simpan perubahan'; document.getElementById('assetCancelEdit').style.display = '';
+    document.getElementById('assetName').scrollIntoView({behavior:'smooth', block:'center'});
   } else if(action === 'delAsset'){
     const id = parseInt(btn.dataset.id,10);
     const rec = data.assets.find(a=>a.id===id);
