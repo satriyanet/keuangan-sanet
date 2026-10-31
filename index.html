@@ -186,6 +186,7 @@
     </div>
     <div class="subview active" id="subview-dash-ringkasan">
     <div class="grid grid-4" id="dashMetrics"></div>
+    <div class="card" id="dashAccounts" style="margin-top:16px;"></div>
     <div class="grid grid-2" id="dashPaymentBreakdown" style="margin-top:16px;"></div>
     <div class="grid grid-2" style="margin-top:16px;">
       <div class="card">
@@ -281,12 +282,8 @@
             <option value="terima_kasbon" id="tPaymentTerimaKasbonOpt">Terima pembayaran kasbon</option>
             <option value="pindah" id="tPaymentPindahOpt">Pindah dana (kas ↔ bank, antar bank)</option>
           </select>
-          <select id="tFromAcct" style="display:none;" aria-label="Dari akun">
-            <option value="Kas">Dari: Kas (tunai)</option><option value="BNI">Dari: Bank BNI</option><option value="BCA">Dari: Bank BCA</option><option value="BPD">Dari: Bank BPD</option><option value="Lainnya">Dari: Bank lainnya</option>
-          </select>
-          <select id="tToAcct" style="display:none;" aria-label="Ke akun">
-            <option value="BNI">Ke: Bank BNI</option><option value="BCA">Ke: Bank BCA</option><option value="BPD">Ke: Bank BPD</option><option value="Lainnya">Ke: Bank lainnya</option><option value="Kas">Ke: Kas (tunai)</option>
-          </select>
+          <select id="tFromAcct" style="display:none;" aria-label="Dari akun"></select>
+          <select id="tToAcct" style="display:none;" aria-label="Ke akun"></select>
           <input type="text" id="tLoanPartyName" placeholder="Nama peminjam/pemberi pinjaman" style="display:none;">
           <select id="tLinkedRecord" style="display:none;"></select>
           <select id="tSavingType" style="display:none;">
@@ -309,6 +306,7 @@
             <option value="BPD">Transfer BPD</option>
             <option value="Lainnya">Bank lainnya...</option>
           </select>
+          <select id="tCashAcct" style="display:none;" aria-label="Masuk/keluar dari akun kas"></select>
           <input type="text" id="tBankCustom" placeholder="Nama bank" style="display:none;">
           <div id="tProofWrap" style="display:none;">
             <label class="helper" style="display:block; margin-bottom:4px;">Bukti transfer (gambar/PDF, maks 5MB)</label>
@@ -1341,8 +1339,8 @@ function formatCurrency(num){
   return new Intl.NumberFormat('id-ID', {style:'currency', currency:'IDR', minimumFractionDigits:0}).format(Math.round(num));
 }
 function formatPaymentMethodText(t){
-  if(t.payment_method === 'pindah') return `Pindah dana ${t.loan_party==='Kas'?'Kas':'Bank '+(t.loan_party||'?')} → ${t.bank==='Kas'?'Kas':'Bank '+(t.bank||'?')}`;
-  if(t.payment_method === 'cash') return 'Cash';
+  if(t.payment_method === 'pindah') return `Pindah dana ${trAcctName(t.loan_party)} → ${trAcctName(t.bank)}`;
+  if(t.payment_method === 'cash') return /^1-\d{4}$/.test(t.bank||'') ? 'Cash ' + akAccName(data, t.bank) : 'Cash';
   if(t.payment_method === 'transfer') return `Transfer ${t.bank||''}`.trim();
   if(t.payment_method === 'tabungan') return `Tabungan ${t.saving_type||''}`.trim() + (t.bank ? ` (dicairkan Transfer ${t.bank})` : ' (dicairkan Cash)');
   if(t.payment_method === 'service') return 'Service/PSB';
@@ -1560,7 +1558,7 @@ function renderTransactions(){
   if(pageRows.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="empty">Tidak ada transaksi pada rentang tanggal ini</td></tr>'; return; }
   tbody.innerHTML = pageRows.map(t => {
     let metode = '-';
-    if(t.payment_method === 'cash') metode = '<span class="pill pill-green">Cash</span>';
+    if(t.payment_method === 'cash') metode = `<span class="pill pill-green">Cash${/^1-\d{4}$/.test(t.bank||'') ? ': '+escapeHtml(akAccName(data, t.bank)) : ''}</span>`;
     else if(t.payment_method === 'transfer') metode = `<span class="pill pill-purple">Transfer ${escapeHtml(t.bank||'')}</span>`;
     else if(t.payment_method === 'tabungan') metode = `<span class="pill pill-amber">Tabungan ${escapeHtml(t.saving_type||'')}</span>` + (t.bank ? ` <span class="pill pill-purple">→ Transfer ${escapeHtml(t.bank)}</span>` : '');
     else if(t.payment_method === 'service') metode = '<span class="pill pill-purple">Service/PSB</span>';
@@ -1568,7 +1566,7 @@ function renderTransactions(){
     else if(t.payment_method === 'piutang') metode = `<span class="pill pill-green">${t.amount>=0?'Terima piutang':'Piutang baru'}${t.loan_party?': '+escapeHtml(t.loan_party):''}</span>` + (t.bank ? ` <span class="pill pill-purple">Transfer${t.bank!=='Transfer'?' '+escapeHtml(t.bank):''}</span>` : '');
     else if(t.payment_method === 'hutang') metode = `<span class="pill pill-amber">${t.amount>=0?'Hutang baru':'Bayar hutang'}${t.loan_party?': '+escapeHtml(t.loan_party):''}</span>` + (t.bank ? ` <span class="pill pill-purple">Transfer${t.bank!=='Transfer'?' '+escapeHtml(t.bank):''}</span>` : '');
     else if(t.payment_method === 'kasbon') metode = `<span class="pill pill-amber">${t.amount>=0?'Bayar kasbon':'Kasbon'}${t.loan_party?': '+escapeHtml(t.loan_party):''}</span>` + (t.bank ? ` <span class="pill pill-purple">Transfer${t.bank!=='Transfer'?' '+escapeHtml(t.bank):''}</span>` : '');
-    else if(t.payment_method === 'pindah') metode = `<span class="pill pill-purple">Pindah dana: ${escapeHtml(t.loan_party==='Kas'?'Kas':'Bank '+(t.loan_party||'?'))} → ${escapeHtml(t.bank==='Kas'?'Kas':'Bank '+(t.bank||'?'))}</span>`;
+    else if(t.payment_method === 'pindah') metode = `<span class="pill pill-purple">Pindah dana: ${escapeHtml(trAcctName(t.loan_party))} → ${escapeHtml(trAcctName(t.bank))}</span>`;
     else if(t.payment_method === 'tagihan') metode = `<span class="pill pill-red">Tagihan belum dibayar${t.loan_party?': '+escapeHtml(t.loan_party):''}</span>`;
     if(t.proof_path){ metode += ` <button class="del-btn" style="color:var(--accent);" data-action="viewProof" data-path="${escapeHtml(t.proof_path)}">Lihat bukti</button>`; }
     else if(t.proof_url){ metode += ` <a href="${t.proof_url}" target="_blank" rel="noopener" style="font-size:12px;">Lihat bukti (lama)</a>`; }
@@ -1699,10 +1697,11 @@ function startEditTransaction(tx){
   const needsDisbursementChoice = ['tabungan','piutang','hutang'].includes(tx.payment_method);
   document.getElementById('tTabunganDisbursement').value = (needsDisbursementChoice && tx.bank) ? 'transfer' : 'cash';
   if(tx.payment_method === 'transfer' || (needsDisbursementChoice && tx.bank)){
-    const bankPresets = ['BNI','BCA','BPD'];
+    const bankPresets = [...document.getElementById('tBank').options].map(o=>o.value).filter(v=>v!=='Lainnya');
     if(bankPresets.includes(tx.bank)){ document.getElementById('tBank').value = tx.bank; }
     else { document.getElementById('tBank').value = 'Lainnya'; document.getElementById('tBankCustom').value = tx.bank || ''; }
   }
+  if(tx.payment_method === 'cash'){ document.getElementById('tCashAcct').value = /^1-\d{4}$/.test(tx.bank||'') ? tx.bank : '1-1100'; }
   if(tx.payment_method === 'tabungan'){
     const typePresets = ['Gaji','Profit','Operational','Bandwidth','Service/PSB','Voucher'];
     if(typePresets.includes(tx.saving_type)){ document.getElementById('tSavingType').value = tx.saving_type; }
@@ -2540,6 +2539,44 @@ document.getElementById('fbResetBtn').addEventListener('click', async ()=>{
   }finally{ btn.disabled = document.getElementById('fbConfirm').value.trim() !== 'RESET'; }
 });
 
+function fillTxAccountOptions(){
+  const coa = akCoa(data).filter(a=>a.is_active !== false);
+  // pilihan bank Transfer dari COA 1-12xx (selain "Bank Lainnya")
+  const bankEl = document.getElementById('tBank');
+  if(bankEl){
+    const cur = bankEl.value;
+    const banks = coa.filter(a=>/^1-12\d\d$/.test(a.code) && a.code!=='1-1290').sort((a,b)=>a.code.localeCompare(b.code));
+    bankEl.innerHTML = banks.map(a=>{ const nm = a.name.replace(/^bank\s+/i,''); return `<option value="${escapeHtml(nm)}">Transfer ${escapeHtml(nm)}</option>`; }).join('') + '<option value="Lainnya">Bank lainnya...</option>';
+    if([...bankEl.options].some(o=>o.value===cur)) bankEl.value = cur;
+  }
+  // pilihan akun kas untuk metode Cash (COA 1-11xx)
+  const cashEl = document.getElementById('tCashAcct');
+  if(cashEl){
+    const cur = cashEl.value;
+    cashEl.innerHTML = coa.filter(a=>/^1-11\d\d$/.test(a.code)).sort((a,b)=>a.code.localeCompare(b.code)).map(a=>`<option value="${a.code}">Cash: ${escapeHtml(a.name)}</option>`).join('');
+    cashEl.value = [...cashEl.options].some(o=>o.value===cur) ? cur : '1-1100';
+  }
+  updateMethodFieldsVisibility();
+}
+function renderDashAccounts(){
+  const el = document.getElementById('dashAccounts'); if(!el) return;
+  const m = akSum(akAllEntries(data));
+  const accts = akCoa(data).filter(a=>a.is_active !== false && /^1-1[12]\d\d$/.test(a.code)).sort((a,b)=>a.code.localeCompare(b.code));
+  const rows = accts.map(a=>({a, bal: akBal(m, data, a.code)})).filter(r=>r.bal !== 0 || ['1-1100','1-1210','1-1220','1-1230'].includes(r.a.code) || !r.a.is_system);
+  const total = rows.reduce((x,r)=>x+r.bal,0);
+  el.innerHTML = `<h3>Saldo per akun kas &amp; bank</h3><p class="helper" style="margin-top:0;">Otomatis dari Daftar Akun (COA). Akun kas/bank baru yang Anda tambahkan di Akuntansi langsung tampil di sini.</p>
+    <div class="grid grid-4">` + rows.map(r=>`<div><p class="metric-label">${escapeHtml(r.a.name)} <span style="color:var(--muted);">${r.a.code}</span></p><p class="metric-value" style="font-size:18px; color:${r.bal<0?'var(--red)':'inherit'}">${formatCurrency(r.bal)}</p></div>`).join('') +
+    `<div><p class="metric-label"><b>Total kas + bank</b></p><p class="metric-value" style="font-size:18px;"><b>${formatCurrency(total)}</b></p></div></div>`;
+}
+function fillTransferAccounts(){
+  const fromEl = document.getElementById('tFromAcct'), toEl = document.getElementById('tToAcct'); if(!fromEl || !toEl) return;
+  const accts = akCoa(data).filter(a=>(a.is_active !== false) && /^1-1[12]\d\d$/.test(a.code)).sort((a,b)=>a.code.localeCompare(b.code));
+  const opts = (pre)=>accts.map(a=>`<option value="${a.code}">${pre}: ${escapeHtml(a.name)} (${a.code})</option>`).join('');
+  const f0 = fromEl.value, t0 = toEl.value;
+  fromEl.innerHTML = opts('Dari'); toEl.innerHTML = opts('Ke');
+  fromEl.value = accts.some(a=>a.code===f0) ? f0 : '1-1100';
+  toEl.value = accts.some(a=>a.code===t0) ? t0 : (accts.find(a=>a.code!==fromEl.value)||{}).code;
+}
 function renderAll(){
   // Setiap bagian dirender terpisah: kalau satu bagian error, bagian lain tetap tampil dan errornya ditampilkan di bagian atas
   const errs = [];
@@ -2547,7 +2584,7 @@ function renderAll(){
   run('Dashboard', renderDashboard); run('Transaksi', renderTransactions); run('Laporan', renderLaporan);
   run('Piutang', renderReceivables); run('Utang', renderPayables); run('Kasbon', renderKasbon); run('Rekomendasi', renderRekomendasiPelunasan);
   run('Anggaran', renderBudgets); run('Gaji', renderPayroll); run('Tabungan', renderSavings); run('Proyeksi', renderProjection);
-  run('Akuntansi', renderAkuntansi); run('Form pembayaran', fillLinkedRecordOptions); run('Dashboard periode', renderDashPeriods);
+  run('Akuntansi', renderAkuntansi); run('Akun pindah dana', fillTransferAccounts); run('Akun transaksi', fillTxAccountOptions); run('Saldo akun', renderDashAccounts); run('Form pembayaran', fillLinkedRecordOptions); run('Dashboard periode', renderDashPeriods);
   if(currentRole === 'owner'){
     if(bsRange) run('Hapus data', bsRender);
     run('Perbandingan', renderComparison); run('Pengguna', renderUsers);
@@ -2764,6 +2801,7 @@ function updateMethodFieldsVisibility(){
 
   document.getElementById('tTabunganDisbursement').style.display = needsDisbursementChoice ? '' : 'none';
   document.getElementById('tBank').style.display = isTransfer ? '' : 'none';
+  document.getElementById('tCashAcct').style.display = (method === 'cash' && document.getElementById('tCashAcct').options.length > 1) ? '' : 'none';
   document.getElementById('tBankCustom').style.display = (isTransfer && document.getElementById('tBank').value === 'Lainnya') ? '' : 'none';
   document.getElementById('tProofWrap').style.display = isTransfer ? '' : 'none';
   document.getElementById('tSavingType').style.display = isTabungan ? '' : 'none';
@@ -2833,7 +2871,7 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
     if(editingTransactionId !== null){ alert('Pindah dana tidak bisa diubah. Hapus (Owner) lalu input ulang.'); return; }
     const from = document.getElementById('tFromAcct').value, to = document.getElementById('tToAcct').value;
     if(from === to){ alert('Akun asal dan tujuan tidak boleh sama.'); return; }
-    const label = (v)=> v === 'Kas' ? 'Kas' : 'Bank ' + v;
+    const label = trAcctName;
     const btnP = document.getElementById('addTransBtn'); btnP.disabled = true;
     const { error: pe } = await sb.from('transactions').insert({
       date, description: desc || `Pindah dana ${label(from)} → ${label(to)}`, amount: amountRaw, category: 'Pindah Dana', created_by: currentUsername,
@@ -2935,6 +2973,7 @@ document.getElementById('addTransBtn').addEventListener('click', async ()=>{
     }
   }
 
+  if(paymentMethod === 'cash'){ const ca = document.getElementById('tCashAcct').value; bank = (ca && ca !== '1-1100') ? ca : null; }
   btn.disabled = true;
 
   // Entri tabungan otomatis yang mengikuti transaksi ini (penarikan tabungan, atau setoran service/voucher)
@@ -3403,6 +3442,11 @@ const AK_DEFAULT_COA = [
   ['6-1400','Beban Pemasaran','beban','D'],['6-1500','Beban Perawatan & Perbaikan','beban','D'],['6-1900','Beban Operasional Lainnya','beban','D'],['6-2000','Alokasi Tabungan Gaji & Profit (diperlakukan sebagai beban)','beban','D']
 ].map(a=>({code:a[0], name:a[1], type:a[2], normal_balance:a[3], is_active:true, is_system:true}));
 const AK_CASH_CODES = ['1-1100','1-1210','1-1220','1-1230','1-1290'];
+// Akun kas & bank = semua akun aset berkode 1-11xx / 1-12xx (termasuk akun tambahan seperti "kas SANET")
+function akCashCodes(d){ const set = new Set(AK_CASH_CODES); akCoa(d).forEach(a=>{ if(a.is_active !== false && /^1-1[12]\d\d$/.test(a.code)) set.add(a.code); }); return [...set]; }
+// Nilai akun pada Pindah dana: kode akun (baru) atau label lama ('Kas','BNI',...)
+function trAcctCode(v){ v = (v||'').trim(); if(/^1-\d{4}$/.test(v)) return v; return v==='Kas' ? '1-1100' : akBankAccount(v); }
+function trAcctName(v){ return akAccName(data, trAcctCode(v)); }
 const AK_TAB_CODES = ['1-1410','1-1420','1-1430','1-1440','1-1490'];
 const AK_EPS = 0.005;
 
@@ -3419,11 +3463,17 @@ function akIsTagihan(d, p){
   return !!t && t.payment_method === 'tagihan';
 }
 function akAccName(d, code){ const a = akCoa(d).find(x=>x.code===code); return a ? a.name : code; }
-function akBankAccount(bank){ const b=(bank||'').trim().toUpperCase(); return b==='BNI'?'1-1210': b==='BCA'?'1-1220': b==='BPD'?'1-1230':'1-1290'; }
+function akBankAccount(bank){
+  const raw = (bank||'').trim(); if(/^1-\d{4}$/.test(raw)) return raw;
+  const b = raw.toUpperCase(); if(b==='BNI') return '1-1210'; if(b==='BCA') return '1-1220'; if(b==='BPD') return '1-1230';
+  // bank tambahan yang dibuat di COA (kode 1-12xx): cocokkan nama (mis. "Bank Mandiri" <- "Mandiri")
+  if(typeof data !== 'undefined' && data){ const hit = akCoa(data).find(a=>/^1-12\d\d$/.test(a.code) && a.code!=='1-1290' && a.is_active!==false && a.name.toLowerCase().replace(/^bank\s+/,'') === raw.toLowerCase()); if(hit) return hit.code; }
+  return '1-1290';
+}
 function akSavingAccount(jenis){ const j=(jenis||'').toLowerCase(); return j==='bandwidth'?'1-1410': j==='operational'?'1-1420': j==='gaji'?'1-1430': j==='profit'?'1-1440':'1-1490'; }
 function akCashAccountOfTx(t){
   const pm = t.payment_method || 'cash';
-  if(pm==='cash') return '1-1100';
+  if(pm==='cash') return /^1-\d{4}$/.test(t.bank||'') ? t.bank : '1-1100'; // kas lain (mis. kas SANET) disimpan sebagai kode di kolom bank
   if(pm==='transfer') return akBankAccount(t.bank);
   return t.bank ? akBankAccount(t.bank) : '1-1100'; // piutang/hutang/kasbon: bank terisi = lewat transfer
 }
@@ -3450,7 +3500,7 @@ function akBuildAutoJournal(d){
     if(ls.length) out.push({key, date: date || '1970-01-01', ref, desc, source:'auto', lines: ls, origin}); // data lama tanpa tanggal ditaruh di awal (saldo awal)
   };
   (d.transfers||[]).forEach(t=>{
-    const acct = (l)=> l==='Kas' ? '1-1100' : akBankAccount(l);
+    const acct = trAcctCode;
     const a = Math.abs(t.amount), ref = 'PD-'+t.id;
     add(ref, t.date, ref, t.description || 'Pindah dana', [[acct(t.bank),a,0],[acct(t.loan_party),0,a]], {type:'transfer', id:t.id});
   });
@@ -3599,6 +3649,7 @@ function akTrialBalance(entries, d, to){
   return {rows, totalD, totalK};
 }
 function akArusKas(entries, d, from, to){
+  const cashSet = new Set(akCashCodes(d));
   const groupOf = (codes)=>{
     if(codes.some(c=>['2-1200','3-1000','3-2000','3-4000'].includes(c))) return 'pendanaan';
     if(codes.some(c=>['1-2100','1-1310','1-1320'].includes(c))) return 'investasi';
@@ -3608,11 +3659,11 @@ function akArusKas(entries, d, from, to){
   const groups = {operasi:{}, investasi:{}, pendanaan:{}, tabungan:{}};
   let opening = 0, net = 0;
   entries.forEach(e=>{
-    const delta = e.lines.filter(l=>AK_CASH_CODES.includes(l.a)).reduce((s,l)=>s+l.d-l.k,0);
+    const delta = e.lines.filter(l=>cashSet.has(l.a)).reduce((s,l)=>s+l.d-l.k,0);
     if(Math.abs(delta) < AK_EPS) return;
     if(from && e.date < from){ opening += delta; return; }
     if(to && e.date > to) return;
-    const others = e.lines.filter(l=>!AK_CASH_CODES.includes(l.a));
+    const others = e.lines.filter(l=>!cashSet.has(l.a));
     const g = groupOf(others.map(l=>l.a));
     const main = others.slice().sort((a,b)=>(b.d+b.k)-(a.d+a.k))[0];
     const label = (delta>0 ? 'Penerimaan: ' : 'Pengeluaran: ') + (main ? akAccName(d, main.a) : 'Lainnya');
@@ -3680,7 +3731,7 @@ function akConsistency(d, fin, paidFor_){
   push('Pendapatan (jurnal otomatis vs Dashboard)', lr.totalPendapatan, fin.totalIncome);
   push('Beban (jurnal otomatis vs Dashboard)', lr.totalPokok + lr.totalOps, fin.totalExpense);
   push('Laba bersih (jurnal otomatis vs Dashboard)', lr.labaBersih, fin.netProfit);
-  push('Saldo Kas + Bank vs Saldo kas Dashboard', AK_CASH_CODES.reduce((s,c)=>s+akBal(m,d,c),0), fin.cashBalance);
+  push('Saldo Kas + Bank vs Saldo kas Dashboard', akCashCodes(d).reduce((s,c)=>s+akBal(m,d,c),0), fin.cashBalance);
   push('Tabungan perusahaan vs Dashboard', AK_TAB_CODES.reduce((s,c)=>s+akBal(m,d,c),0), fin.totalSavings);
   push('Dana Service/PSB vs Dashboard', akBal(m,d,'1-1510'), fin.totalServiceFund);
   push('Dana Voucher vs Dashboard', akBal(m,d,'1-1520'), fin.totalVoucherFund);
