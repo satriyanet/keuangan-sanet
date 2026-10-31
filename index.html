@@ -967,6 +967,17 @@
 
   <div class="view owner-only" id="view-bersih">
     <div class="card">
+      <h3>Cadangan &amp; reset semua data</h3>
+      <p class="helper" style="margin-top:0;"><b>Cadangan lengkap</b> mengunduh seluruh data (transaksi, tabungan, piutang, hutang, kasbon, aset, gaji, anggaran, akuntansi) sebagai file Excel dan file JSON. <b>Reset</b> menghapus semua data keuangan tersebut untuk mulai dari nol; akun pengguna, daftar akun (COA), pemetaan kategori, hari libur dan log aktivitas tetap ada. Cadangan otomatis diunduh sebelum reset dan reset tidak bisa dibatalkan.</p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="primary" id="fbBackupBtn">Unduh cadangan lengkap</button></div>
+      <div class="form-grid" style="margin-top:14px; border-top:1px solid var(--border); padding-top:14px;">
+        <label class="helper" style="display:flex; gap:6px; align-items:center;"><input type="checkbox" id="fbIncBudget"> Ikut hapus anggaran &amp; data gaji</label>
+        <input type="text" id="fbConfirm" placeholder='Ketik RESET untuk konfirmasi' autocomplete="off">
+        <button class="primary" id="fbResetBtn" style="background:var(--red);" disabled>Cadangkan &amp; reset semua data</button>
+      </div>
+      <p class="helper" id="fbProgress"></p>
+    </div>
+    <div class="card">
       <h3>Hapus data yang tidak dipakai (mis. data trial)</h3>
       <p class="helper" style="margin-top:0;">Khusus Owner. Pilih rentang tanggal, tampilkan data, lalu centang <b>per hari</b> (otomatis semua transaksi hari itu) atau <b>per transaksi</b>. Sebelum dihapus, aplikasi menampilkan dampaknya ke saldo kas &amp; laba dan <b>mengunduh cadangan Excel otomatis</b>. Data yang sudah dihapus tidak bisa dikembalikan.</p>
       <div class="form-grid">
@@ -2463,6 +2474,57 @@ document.getElementById('bsDeleteBtn').addEventListener('click', async ()=>{
     alert('Penghapusan berhenti karena error: ' + (e.message || e) + '\n\nSebagian data mungkin sudah terhapus. Cadangan Excel sudah terunduh. Muat ulang halaman lalu cek hasilnya.');
     await loadAllData(); renderAll(); bsRender();
   }finally{ bsRenderSummary(); }
+});
+
+// ===== Cadangan lengkap & reset semua data (Owner) =====
+const FB_TABLES = [
+  ['Transaksi','transactions','transactions'], ['Tabungan','savings','savings'], ['Piutang','receivables','receivables'], ['Pembayaran piutang','receivable_payments','receivablePayments'],
+  ['Utang','payables','payables'], ['Pembayaran utang','payable_payments','payablePayments'], ['Kasbon','kasbon','kasbon'], ['Pembayaran kasbon','kasbon_payments','kasbonPayments'],
+  ['Aset','assets','assets'], ['Anggaran','budgets','budgets'], ['Gaji','payroll','payroll'], ['Akun COA','coa_accounts','coa'], ['Jurnal manual','journal_entries','journalEntries'],
+  ['Baris jurnal','journal_lines','journalLines'], ['Faktur','invoices','invoices'], ['Pembayaran faktur','invoice_payments','invoicePayments'], ['Rekening koran','bank_statement_lines','bankLines'], ['Pemetaan kategori','category_map','categoryMap']
+];
+function fbDownloadBackup(prefix){
+  const wb = XLSX.utils.book_new(), json = { dibuat: new Date().toISOString(), tabel: {} };
+  FB_TABLES.forEach(([label, table, key])=>{
+    const rows = data[key] || []; json.tabel[table] = rows;
+    if(rows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map(r=>{ const o = {}; Object.keys(r).forEach(k=>{ o[k] = (r[k] !== null && typeof r[k] === 'object') ? JSON.stringify(r[k]) : r[k]; }); return o; })), label.slice(0,31));
+  });
+  if(!wb.SheetNames.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Tidak ada data']]), 'Kosong');
+  const stamp = new Date().toISOString().slice(0,16).replace(/[-:T]/g,'');
+  XLSX.writeFile(wb, `${prefix}-${stamp}.xlsx`);
+  const blob = new Blob([JSON.stringify(json)], {type:'application/json'}), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `${prefix}-${stamp}.json`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+document.getElementById('fbBackupBtn').addEventListener('click', async ()=>{
+  if(currentRole !== 'owner') return;
+  const pg = document.getElementById('fbProgress'); pg.textContent = 'Mengambil data terbaru...';
+  try{ await loadAllData(); fbDownloadBackup('Cadangan-lengkap'); pg.textContent = 'Cadangan (Excel + JSON) sudah terunduh. Simpan di tempat aman.'; logActivity('export', 'backup', 'Unduh cadangan lengkap'); }
+  catch(e){ pg.textContent = 'Gagal: ' + (e.message || e); }
+});
+document.getElementById('fbConfirm').addEventListener('input', (e)=>{ document.getElementById('fbResetBtn').disabled = e.target.value.trim() !== 'RESET'; });
+document.getElementById('fbResetBtn').addEventListener('click', async ()=>{
+  if(currentRole !== 'owner'){ alert('Hanya Owner yang boleh reset data.'); return; }
+  if(document.getElementById('fbConfirm').value.trim() !== 'RESET') return;
+  if(!confirm('YAKIN? Semua data keuangan akan dihapus permanen. Cadangan akan diunduh lebih dulu.')) return;
+  const btn = document.getElementById('fbResetBtn'), pg = document.getElementById('fbProgress'), incBudget = document.getElementById('fbIncBudget').checked;
+  btn.disabled = true;
+  try{
+    pg.textContent = 'Membuat cadangan...'; await loadAllData(); fbDownloadBackup('Cadangan-sebelum-reset');
+    pg.textContent = 'Menghapus...';
+    const wipe = async (table)=>{ const { error } = await sb.from(table).delete().not('id','is',null); if(error && !/does not exist|schema cache/i.test(error.message||'')) throw new Error(table + ': ' + error.message); };
+    // urutan: riwayat pembayaran -> pinjaman -> tabungan -> faktur/bank -> transaksi -> sisanya
+    for(const t of ['receivable_payments','payable_payments','kasbon_payments','receivables','payables','kasbon','savings','invoice_payments','invoices','bank_statement_lines','journal_entries','transactions','assets']) await wipe(t);
+    if(incBudget){ await wipe('budgets'); await wipe('payroll'); }
+    try{ const { data: files } = await sb.storage.from('bukti-transfer').list('', {limit:1000}); if(files && files.length) await sb.storage.from('bukti-transfer').remove(files.filter(f=>f.id).map(f=>f.name)); }catch(e){}
+    logActivity('delete', 'transactions', 'RESET SEMUA DATA keuangan' + (incBudget ? ' (termasuk anggaran & gaji)' : ''));
+    document.getElementById('fbConfirm').value = '';
+    await loadAllData(); renderAll();
+    pg.textContent = 'Selesai: semua data keuangan sudah dikosongkan. Cadangan sebelum reset sudah terunduh.';
+  }catch(e){
+    pg.textContent = '';
+    alert('Reset berhenti karena error: ' + (e.message || e) + '\n\nSebagian data mungkin sudah terhapus. Cadangan sudah terunduh. Muat ulang halaman lalu cek.');
+    await loadAllData(); renderAll();
+  }finally{ btn.disabled = document.getElementById('fbConfirm').value.trim() !== 'RESET'; }
 });
 
 function renderAll(){
