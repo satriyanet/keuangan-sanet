@@ -117,6 +117,13 @@
     position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center;
     z-index:200; padding:24px; text-align:center;
   }
+  #slipModal{position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:flex-start; justify-content:center; overflow:auto; z-index:1000; padding:20px 10px;}
+  #slipModal .slip-wrap{background:#fff; color:#111; max-width:560px; width:100%; border-radius:10px; padding:20px;}
+  .slip-doc{font-size:13px; color:#111;} .slip-doc h2{margin:0; font-size:18px; letter-spacing:1px; text-align:center;} .slip-doc .sub{text-align:center; margin:2px 0 12px; color:#444;}
+  .slip-doc table{width:100%; border-collapse:collapse; margin:6px 0;} .slip-doc td{padding:4px 6px; border:none; border-bottom:1px solid #e5e5e5;} .slip-doc td.r{text-align:right; white-space:nowrap;}
+  .slip-doc .sec td{background:#f1f1ee; font-weight:700; border-bottom:1px solid #ccc;} .slip-doc .tot td{font-weight:700; border-top:1px solid #111; border-bottom:none;} .slip-doc .net td{font-size:15px; font-weight:800; background:#e7f6ec; border:1px solid #0f8a4a;}
+  .slip-doc .sign{display:flex; justify-content:space-between; margin-top:28px; text-align:center;} .slip-doc .sign div{width:44%; padding-top:46px; border-top:1px solid #111; margin-top:0;}
+  @media print{ body *{visibility:hidden !important;} #slipModal, #slipModal *{visibility:visible !important;} #slipModal{position:absolute; inset:auto; left:0; top:0; background:#fff; padding:0; display:block !important;} #slipModal .slip-wrap{box-shadow:none; max-width:none; padding:0;} .noprint{display:none !important;} }
 </style>
 </head>
 <body>
@@ -708,10 +715,20 @@
         <div class="form-grid">
           <input type="text" id="empName" placeholder="Nama karyawan (yang dipakai di semua catatan)">
           <input type="text" id="empNotes" placeholder="Catatan (opsional, mis. panggilan: Tut)">
-          <button class="primary" id="addEmpBtn">Tambah karyawan</button>
         </div>
+        <div class="form-grid" style="margin-top:8px;" id="empPayFields">
+          <div><label class="helper">Gaji pokok tetap (Rp/bulan)</label><input type="number" id="empSalary" min="0" placeholder="0"></div>
+          <div><label class="helper">Bonus pulsa tetap (Rp/bulan)</label><input type="number" id="empPulsa" min="0" placeholder="0"></div>
+          <div><label class="helper">BPJS Ketenagakerjaan (Rp/bulan)</label><input type="number" id="empBpjs" min="0" placeholder="0"></div>
+          <div><label class="helper">BPJS Ketenagakerjaan ditanggung</label><select id="empBpjsMode"><option value="perusahaan">Perusahaan (biaya tambahan)</option><option value="potong">Karyawan (potong gaji)</option></select></div>
+          <div><label class="helper">Potongan BPJS tetap (Rp/bulan)</label><input type="number" id="empBpjsPot" min="0" placeholder="0"></div>
+          <div><label class="helper">Cicilan pinjaman (Rp/bulan)</label><input type="number" id="empCicilan" min="0" placeholder="0"></div>
+          <div><label class="helper">Sisa pinjaman saat ini (Rp)</label><input type="number" id="empPinjAwal" min="0" placeholder="0"></div>
+          <div style="display:flex; gap:6px; align-items:flex-end;"><button class="primary" id="addEmpBtn">Tambah karyawan</button><button class="ghost" id="empCancelEdit" style="display:none;">Batal</button></div>
+        </div>
+        <p class="helper" id="empPayNote">Gaji pokok, bonus pulsa, dan BPJS diisi sekali di sini; tiap bulan otomatis terisi di Gaji &amp; bonus. Jika ada kenaikan, ubah di sini: berlaku untuk bulan yang belum disimpan, riwayat bulan lalu tidak berubah.</p>
       </div>
-      <div class="card" style="margin-top:16px;"><div style="overflow-x:auto;"><table><thead><tr><th>Nama</th><th>Catatan</th><th class="right">Kasbon aktif</th><th class="right">Aksi</th></tr></thead><tbody id="empBody"></tbody></table></div></div>
+      <div class="card" style="margin-top:16px;"><div style="overflow-x:auto;"><table><thead><tr><th>Nama</th><th class="right">Gaji pokok</th><th class="right">Bonus pulsa</th><th class="right">BPJS TK</th><th class="right">Potongan</th><th>Catatan</th><th class="right">Kasbon aktif</th><th class="right">Aksi</th></tr></thead><tbody id="empBody"></tbody></table></div></div>
       <div class="card" id="empUnmatchedCard" style="margin-top:16px; display:none; border-color:var(--amber);">
         <h3>Nama lama belum terdaftar</h3>
         <p class="helper" style="margin-top:0;">Nama berikut ada di catatan kasbon/gaji tetapi belum ada di daftar. Gabungkan ke karyawan yang benar (semua catatan ikut diganti) atau daftarkan sebagai karyawan baru.</p>
@@ -720,16 +737,18 @@
     </div>
 
     <div class="subview" id="subview-payroll">
-      <div class="card">
-        <h3>Tambah gaji & bonus karyawan</h3>
-        <div class="form-grid">
-          <select id="pName" aria-label="Nama karyawan"></select>
-          <input type="month" id="pMonth">
-          <input type="number" id="pSalary" placeholder="Gaji pokok (Rp)">
-          <input type="number" id="pBonus" placeholder="Bonus (Rp, boleh 0)">
-          <input type="text" id="pNotes" placeholder="Catatan (opsional)">
-          <button class="primary" id="addPayrollBtn">Tambah</button>
+      <div class="card" id="prSetup" style="display:none; border-color:var(--amber);">
+        <h3>Perlu satu langkah setup</h3>
+        <p class="helper" style="margin:0;">Jalankan file <b>migration-gaji.sql</b> lalu <b>migration-slip.sql</b> sekali di Supabase → SQL Editor (setelah migration-karyawan.sql), lalu muat ulang aplikasi.</p>
+      </div>
+      <div class="card" id="prPanel">
+        <div class="flex-between">
+          <h3 style="margin:0;">Penggajian bulanan</h3>
+          <div style="display:flex; align-items:center; gap:8px;"><label class="helper" style="margin:0;">Bulan</label><input type="month" id="prMonth" style="width:150px;"></div>
         </div>
+        <p class="helper">Gaji pokok, bonus pulsa, dan BPJS terisi otomatis dari <b>Daftar karyawan</b>. Accounting hanya mengisi bonus yang berubah (service, head, lainnya) dan potongan kasbon, lalu klik <b>Simpan semua</b>. Setelah tersimpan, tombol <b>Slip</b> muncul untuk disalin/dicetak.</p>
+        <div style="overflow-x:auto;"><table><thead><tr><th>Karyawan</th><th class="right">Gaji pokok</th><th class="right">Bonus pulsa</th><th class="right">BPJS TK</th><th>Bonus service</th><th>Bonus head</th><th>Bonus lainnya</th><th>Potong kasbon</th><th>Potongan BPJS</th><th>Potong pinjaman</th><th>Sisa pinjaman</th><th class="right">Diterima</th><th>Catatan</th><th>Status</th></tr></thead><tbody id="prBody"></tbody></table></div>
+        <div class="flex-between" style="margin-top:10px;"><div style="font-weight:600;" id="prTotals"></div><button class="primary" id="prSaveBtn">Simpan semua</button></div>
       </div>
       <div class="card" style="margin-top:16px;">
         <div class="flex-between">
@@ -742,12 +761,14 @@
         </div>
         <div style="overflow-x:auto; margin-top:10px;">
           <table>
-            <thead><tr><th>Bulan</th><th>Karyawan</th><th class="right">Gaji pokok</th><th class="right">Bonus</th><th class="right">Total</th><th>Catatan</th><th></th></tr></thead>
+            <thead><tr><th>Bulan</th><th>Karyawan</th><th class="right">Gaji pokok</th><th class="right">Pulsa</th><th class="right">Service</th><th class="right">Head</th><th class="right">Lainnya</th><th class="right">BPJS TK</th><th class="right">Potongan</th><th class="right">Diterima</th><th>Catatan</th><th></th></tr></thead>
             <tbody id="payrollTable"></tbody>
           </table>
         </div>
         <div class="flex-between" style="margin-top:10px; font-weight:600;">
           <span id="payrollTotalLabel">Total (bulan ditampilkan)</span><span id="payrollTotal"></span>
+        </div>
+        <div class="flex-between" style="margin-top:4px; font-size:13px; color:var(--text2);"><span>Biaya perusahaan (termasuk BPJS yang ditanggung perusahaan)</span><span id="payrollCostTotal"></span>
         </div>
       </div>
     </div>
@@ -997,6 +1018,13 @@
     </div>
   </div>
 
+  <div id="slipModal" role="dialog" aria-label="Slip gaji"><div class="slip-wrap">
+    <div class="noprint" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px;">
+      <button class="primary" id="slipCopyBtn">Salin teks</button><button class="primary" id="slipWaBtn" style="background:#128c4a;">Kirim WhatsApp</button><button class="ghost" id="slipPrintBtn">Cetak / Simpan PDF</button><button class="ghost" id="slipCloseBtn" style="margin-left:auto;">Tutup</button>
+    </div>
+    <div id="slipBody" class="slip-doc"></div>
+  </div></div>
+
   <div class="view" id="view-rutin">
     <div class="card" id="rcSetup" style="display:none; border-color:var(--amber);">
       <h3>Perlu satu langkah setup</h3>
@@ -1168,7 +1196,7 @@ const SESSION_KEY = 'finance_app_session_v1';
 let currentRole = null;
 let currentUsername = null;
 let dataLoaded = false;
-let data = { transactions: [], transfers: [], recurring: [], rcReady: false, employees: [], empReady: false, receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [], coa: [], journalEntries: [], journalLines: [], invoices: [], invoicePayments: [], bankLines: [], categoryMap: [] };
+let data = { transactions: [], transfers: [], recurring: [], rcReady: false, employees: [], empReady: false, payV2: false, receivables: [], payables: [], budgets: [], payroll: [], savings: [], receivablePayments: [], payablePayments: [], kasbon: [], kasbonPayments: [], assets: [], holidays: [], coa: [], journalEntries: [], journalLines: [], invoices: [], invoicePayments: [], bankLines: [], categoryMap: [] };
 
 // ---------- Login ----------
 document.getElementById('loginBtn').addEventListener('click', handleLogin);
@@ -1304,7 +1332,7 @@ function setSyncStatus(ok){
 
 async function loadAllData(){
   try{
-    const [t, r, p, b, pr, sv, arp, app_, kb, kbp, ast, hol, coa, je, jl, inv, invp, bsl, cmap, rcx, empx] = await Promise.all([
+    const [t, r, p, b, pr, sv, arp, app_, kb, kbp, ast, hol, coa, je, jl, inv, invp, bsl, cmap, rcx, empx, payprobe] = await Promise.all([
       sb.from('transactions').select('*').order('date', {ascending:false}),
       sb.from('receivables').select('*').order('id'),
       sb.from('payables').select('*').order('id'),
@@ -1325,7 +1353,8 @@ async function loadAllData(){
       sb.from('bank_statement_lines').select('*').order('date', {ascending:false}),
       sb.from('category_map').select('*').order('keyword'),
       sb.from('recurring_expenses').select('*').order('due_day'),
-      sb.from('employees').select('*').order('name')
+      sb.from('employees').select('*').order('name'),
+      sb.from('employees').select('base_salary,bonus_pulsa,bpjs,bpjs_mode,bpjs_potong,cicilan_pinjaman,pinjaman_awal').limit(1)
     ]);
     if(t.error) throw t.error;
     const allTx = t.data.map(x => ({...x, amount: Number(x.amount)}));
@@ -1334,7 +1363,7 @@ async function loadAllData(){
     data.receivables = r.data.map(x => ({...x, amount: Number(x.amount)}));
     data.payables = p.data.map(x => ({...x, amount: Number(x.amount)}));
     data.budgets = b.data.map(x => ({...x, amount: Number(x.amount)}));
-    data.payroll = (pr.data||[]).map(x => ({...x, base_salary: Number(x.base_salary), bonus: Number(x.bonus)}));
+    data.payroll = (pr.data||[]).map(x => ({...x, base_salary: Number(x.base_salary), bonus: Number(x.bonus), bonus_pulsa: Number(x.bonus_pulsa)||0, bonus_service: Number(x.bonus_service)||0, bonus_head: Number(x.bonus_head)||0, bpjs: Number(x.bpjs)||0, bpjs_potong: Number(x.bpjs_potong)||0, potong_kasbon: Number(x.potong_kasbon)||0, potong_pinjaman: Number(x.potong_pinjaman)||0, sisa_pinjaman: Number(x.sisa_pinjaman)||0}));
     data.savings = (sv.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.receivablePayments = (arp.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.payablePayments = (app_.data||[]).map(x => ({...x, amount: Number(x.amount)}));
@@ -1352,7 +1381,8 @@ async function loadAllData(){
     data.bankLines = bsl.error ? [] : (bsl.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     data.categoryMap = cmap.error ? [] : (cmap.data||[]);
     data.empReady = !empx.error;
-    data.employees = empx.error ? [] : (empx.data||[]);
+    data.payV2 = !empx.error && !payprobe.error;
+    data.employees = empx.error ? [] : (empx.data||[]).map(x => ({...x, base_salary: Number(x.base_salary)||0, bonus_pulsa: Number(x.bonus_pulsa)||0, bpjs: Number(x.bpjs)||0, bpjs_potong: Number(x.bpjs_potong)||0, cicilan_pinjaman: Number(x.cicilan_pinjaman)||0, pinjaman_awal: Number(x.pinjaman_awal)||0}));
     data.rcReady = !rcx.error;
     data.recurring = rcx.error ? [] : (rcx.data||[]).map(x => ({...x, amount: Number(x.amount)}));
     setSyncStatus(true);
@@ -2013,31 +2043,191 @@ function payrollMonthLabel(ym){
   return monthLabel(ym);
 }
 
+const COMPANY_NAME = 'SANET';
+function payParts(p){
+  const pulsa = p.bonus_pulsa||0, service = p.bonus_service||0, head = p.bonus_head||0;
+  return { pulsa, service, head, lain: Math.max(0, (p.bonus||0) - pulsa - service - head) };
+}
+function payDeductions(p){ return (p.bpjs_mode === 'potong' ? (p.bpjs||0) : 0) + (p.bpjs_potong||0) + (p.potong_kasbon||0) + (p.potong_pinjaman||0); }
+function payNet(p){ return (p.base_salary||0) + (p.bonus||0) - payDeductions(p); }
+function payCost(p){ return (p.base_salary||0) + (p.bonus||0) + (p.bpjs_mode === 'perusahaan' ? (p.bpjs||0) : 0); }
 function renderPayroll(){
   const filter = document.getElementById('payrollFilterMonth').value; // '' or 'YYYY-MM'
   const rows = filter ? data.payroll.filter(p => p.month === filter) : data.payroll;
   const sorted = [...rows].sort((a,b)=> b.month.localeCompare(a.month) || a.employee_name.localeCompare(b.employee_name));
   const tbody = document.getElementById('payrollTable');
   if(sorted.length === 0){
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">Belum ada data gaji/bonus</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">Belum ada data gaji/bonus</td></tr>';
   } else {
     tbody.innerHTML = sorted.map(p => {
-      const total = p.base_salary + p.bonus;
+      const b = payParts(p), pot = payDeductions(p);
       return `<tr>
         <td>${payrollMonthLabel(p.month)}</td>
         <td>${escapeHtml(p.employee_name)}</td>
         <td class="right">${formatCurrency(p.base_salary)}</td>
-        <td class="right">${formatCurrency(p.bonus)}</td>
-        <td class="right" style="font-weight:600;">${formatCurrency(total)}</td>
+        <td class="right">${formatCurrency(b.pulsa)}</td><td class="right">${formatCurrency(b.service)}</td><td class="right">${formatCurrency(b.head)}</td><td class="right">${formatCurrency(b.lain)}</td>
+        <td class="right">${p.bpjs ? formatCurrency(p.bpjs) + '<br><span class="helper" style="margin:0;">' + (p.bpjs_mode === 'potong' ? 'potong gaji' : 'perusahaan') + '</span>' : '-'}</td>
+        <td class="right">${pot ? formatCurrency(pot) : '-'}</td>
+        <td class="right" style="font-weight:600;">${formatCurrency(payNet(p))}</td>
         <td>${escapeHtml(p.notes||'-')}</td>
-        <td class="right"><button class="del-btn" data-id="${p.id}" data-action="delPayroll">Hapus</button></td>
+        <td class="right"><button class="ghost" data-action="slipPayroll" data-id="${p.id}" style="padding:4px 10px; font-size:12px;">Slip</button> <button class="del-btn" data-id="${p.id}" data-action="delPayroll">Hapus</button></td>
       </tr>`;
     }).join('');
   }
-  const total = sorted.reduce((s,p)=> s + p.base_salary + p.bonus, 0);
-  document.getElementById('payrollTotal').textContent = formatCurrency(total);
-  document.getElementById('payrollTotalLabel').textContent = filter ? `Total (${payrollMonthLabel(filter)})` : 'Total (semua bulan ditampilkan)';
+  document.getElementById('payrollTotal').textContent = formatCurrency(sorted.reduce((s,p)=> s + payNet(p), 0));
+  document.getElementById('payrollCostTotal').textContent = formatCurrency(sorted.reduce((s,p)=> s + payCost(p), 0));
+  document.getElementById('payrollTotalLabel').textContent = filter ? `Total diterima karyawan (${payrollMonthLabel(filter)})` : 'Total diterima karyawan (semua bulan ditampilkan)';
+  renderPayrollPanel();
 }
+// ---- Penggajian bulanan (otomatis dari Daftar karyawan)
+const prDraft = {}; // { 'YYYY-MM': { empId: {service, head, lain, kasbon, bpjsPot, pinj, sisa, notes} } }
+function prRowModel(emp, month){
+  const key = (emp.name||'').trim().toLowerCase();
+  const saved = data.payroll.find(p => p.month === month && (p.employee_name||'').trim().toLowerCase() === key);
+  const d = (prDraft[month] && prDraft[month][emp.id]) || {};
+  const sp = saved ? payParts(saved) : null;
+  const pick = (f, savedVal, defVal)=> d[f] !== undefined ? d[f] : (saved ? savedVal : defVal);
+  const m = {
+    saved, base: saved ? saved.base_salary : emp.base_salary, pulsa: saved ? sp.pulsa : emp.bonus_pulsa,
+    bpjs: saved ? saved.bpjs : emp.bpjs, mode: saved ? (saved.bpjs_mode || 'perusahaan') : (emp.bpjs_mode || 'perusahaan'),
+    service: pick('service', sp && sp.service, ''), head: pick('head', sp && sp.head, ''), lain: pick('lain', sp && sp.lain, ''),
+    kasbon: pick('kasbon', saved && saved.potong_kasbon, ''), bpjsPot: pick('bpjsPot', saved && saved.bpjs_potong, emp.bpjs_potong || ''),
+    pinj: pick('pinj', saved && saved.potong_pinjaman, emp.cicilan_pinjaman || ''), notes: pick('notes', saved && (saved.notes||''), '')
+  };
+  if(d.sisa !== undefined) m.sisa = d.sisa;
+  else if(saved) m.sisa = saved.sisa_pinjaman;
+  else { // otomatis: sisa bulan lalu (atau sisa awal di Daftar karyawan) dikurangi cicilan bulan ini
+    const prev = data.payroll.filter(p => (p.employee_name||'').trim().toLowerCase() === key && p.month < month).sort((a,b)=>b.month.localeCompare(a.month))[0];
+    const before = prev ? prev.sisa_pinjaman : (emp.pinjaman_awal || 0);
+    m.sisa = Math.max(0, before - (parseFloat(m.pinj)||0));
+  }
+  return m;
+}
+const n0 = (v)=> parseFloat(v)||0;
+function prNet(m){ return m.base + m.pulsa + n0(m.service) + n0(m.head) + n0(m.lain) - (m.mode === 'potong' ? m.bpjs : 0) - n0(m.kasbon) - n0(m.bpjsPot) - n0(m.pinj); }
+function prToPayroll(emp, m, month){
+  const service = n0(m.service), head = n0(m.head), lain = n0(m.lain);
+  return { employee_name: emp.name, month, base_salary: m.base, bonus: m.pulsa + service + head + lain, bonus_pulsa: m.pulsa, bonus_service: service, bonus_head: head, bpjs: m.bpjs, bpjs_mode: m.mode,
+    bpjs_potong: n0(m.bpjsPot), potong_kasbon: n0(m.kasbon), potong_pinjaman: n0(m.pinj), sisa_pinjaman: n0(m.sisa), notes: (m.notes||'').trim() || null };
+}
+function renderPayrollPanel(){
+  const setup = document.getElementById('prSetup'), panel = document.getElementById('prPanel'); if(!panel) return;
+  const ok = data.empReady && data.payV2;
+  setup.style.display = ok ? 'none' : ''; panel.style.display = ok ? '' : 'none'; if(!ok) return;
+  const mi = document.getElementById('prMonth'); if(!mi.value) mi.value = rcToday().slice(0,7);
+  const month = mi.value;
+  const emps = data.employees.filter(e=>e.is_active !== false).sort((a,b)=>a.name.localeCompare(b.name));
+  const active = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.pr ? document.activeElement.dataset.pr + ':' + document.activeElement.dataset.emp : null;
+  document.getElementById('prBody').innerHTML = emps.map(e=>{
+    const m = prRowModel(e, month);
+    const inp = (f, v)=>`<input type="number" min="0" data-pr="${f}" data-emp="${e.id}" value="${v === 0 || v === '' ? '' : v}" placeholder="0" style="width:105px;">`;
+    return `<tr data-prrow="${e.id}"><td><b>${escapeHtml(e.name)}</b></td><td class="right">${formatCurrency(m.base)}</td><td class="right">${formatCurrency(m.pulsa)}</td>
+      <td class="right">${m.bpjs ? formatCurrency(m.bpjs) + '<br><span class="helper" style="margin:0;">' + (m.mode === 'potong' ? 'potong gaji' : 'perusahaan') + '</span>' : '-'}</td>
+      <td>${inp('service', m.service)}</td><td>${inp('head', m.head)}</td><td>${inp('lain', m.lain)}</td>
+      <td>${inp('kasbon', m.kasbon)}</td><td>${inp('bpjsPot', m.bpjsPot)}</td><td>${inp('pinj', m.pinj)}</td><td>${inp('sisa', m.sisa)}</td>
+      <td class="right" style="font-weight:600;" data-prnet="${e.id}">${formatCurrency(prNet(m))}</td>
+      <td><input type="text" data-pr="notes" data-emp="${e.id}" value="${escapeHtml(m.notes)}" placeholder="opsional" style="width:120px;"></td>
+      <td>${m.saved ? '<span class="pill pill-green">Tersimpan</span><br><button class="ghost" data-prslip="' + m.saved.id + '" style="padding:2px 8px; font-size:12px; margin-top:4px;">Slip</button>' : '<span class="pill pill-amber">Belum disimpan</span>'}</td></tr>`;
+  }).join('') || '<tr><td colspan="14" class="empty">Belum ada karyawan aktif. Tambahkan di Daftar karyawan.</td></tr>';
+  prUpdateTotals();
+  if(active){ const [f,id] = active.split(':'); const el = document.querySelector(`#prBody [data-pr="${f}"][data-emp="${id}"]`); if(el) el.focus(); }
+}
+function prUpdateTotals(){
+  const month = document.getElementById('prMonth').value;
+  let net = 0, cost = 0;
+  data.employees.filter(e=>e.is_active !== false).forEach(e=>{ const m = prRowModel(e, month); net += prNet(m); cost += payCost(prToPayroll(e, m, month)); });
+  document.getElementById('prTotals').innerHTML = `Total diterima karyawan: ${formatCurrency(net)} <span class="helper" style="margin:0 0 0 10px; font-weight:400;">Biaya perusahaan: ${formatCurrency(cost)}</span>`;
+}
+document.getElementById('prMonth').addEventListener('change', renderPayrollPanel);
+document.getElementById('prBody').addEventListener('input', (e)=>{
+  const f = e.target.dataset.pr, id = parseInt(e.target.dataset.emp, 10); if(!f) return;
+  const month = document.getElementById('prMonth').value;
+  (prDraft[month] = prDraft[month] || {}); (prDraft[month][id] = prDraft[month][id] || {});
+  prDraft[month][id][f] = e.target.value;
+  if(f === 'pinj' && prDraft[month][id].sisa === undefined){ // sisa pinjaman ikut berubah otomatis selama belum diisi manual
+    const emp = data.employees.find(x=>x.id===id); const cell = document.querySelector(`#prBody [data-pr="sisa"][data-emp="${id}"]`);
+    if(emp && cell){ cell.value = prRowModel(emp, month).sisa || ''; }
+  }
+  const emp = data.employees.find(x=>x.id===id); if(emp){ const cell = document.querySelector(`[data-prnet="${id}"]`); if(cell) cell.textContent = formatCurrency(prNet(prRowModel(emp, month))); }
+  prUpdateTotals();
+});
+document.getElementById('prBody').addEventListener('click', (e)=>{ const b = e.target.closest('[data-prslip]'); if(b) openSlip(parseInt(b.dataset.prslip, 10)); });
+document.getElementById('prSaveBtn').addEventListener('click', async ()=>{
+  const month = document.getElementById('prMonth').value; if(!month){ alert('Pilih bulan.'); return; }
+  const emps = data.employees.filter(e=>e.is_active !== false); if(!emps.length) return;
+  const resaved = emps.filter(e=>prRowModel(e, month).saved).length;
+  if(!confirm(`Simpan penggajian ${payrollMonthLabel(month)} untuk ${emps.length} karyawan?` + (resaved ? `\n${resaved} data bulan ini sudah tersimpan dan akan diperbarui.` : ''))) return;
+  const btn = document.getElementById('prSaveBtn'); btn.disabled = true;
+  try{
+    for(const e of emps){
+      const m = prRowModel(e, month), row = prToPayroll(e, m, month);
+      const q = m.saved ? sb.from('payroll').update(row).eq('id', m.saved.id) : sb.from('payroll').insert(row);
+      const { error } = await q; if(error) throw new Error(e.name + ': ' + error.message);
+    }
+    delete prDraft[month];
+    logActivity('create', 'payroll', `Penggajian ${month} untuk ${emps.length} karyawan`);
+    flashSaved(); await loadAllData(); renderPayroll();
+  }catch(err){ alert('Gagal menyimpan: ' + (err.message||err)); await loadAllData(); renderPayroll(); }
+  finally{ btn.disabled = false; }
+});
+
+// ---- Slip gaji (salin / WhatsApp / cetak)
+function terbilang(n){
+  const sat = ['','satu','dua','tiga','empat','lima','enam','tujuh','delapan','sembilan','sepuluh','sebelas'];
+  const t = (n)=>{ n = Math.floor(n);
+    if(n < 12) return sat[n]; if(n < 20) return t(n-10) + ' belas';
+    if(n < 100) return t(n/10) + ' puluh' + (n%10 ? ' ' + t(n%10) : '');
+    if(n < 200) return 'seratus' + (n%100 ? ' ' + t(n%100) : '');
+    if(n < 1000) return t(n/100) + ' ratus' + (n%100 ? ' ' + t(n%100) : '');
+    if(n < 2000) return 'seribu' + (n%1000 ? ' ' + t(n%1000) : '');
+    if(n < 1e6) return t(n/1000) + ' ribu' + (n%1000 ? ' ' + t(n%1000) : '');
+    if(n < 1e9) return t(n/1e6) + ' juta' + (n%1e6 ? ' ' + t(n%1e6) : '');
+    return t(n/1e9) + ' miliar' + (n%1e9 ? ' ' + t(n%1e9) : ''); };
+  n = Math.round(n); return n === 0 ? 'nol' : (n < 0 ? 'minus ' : '') + t(Math.abs(n));
+}
+function slipModel(p){
+  const b = payParts(p);
+  const earn = [['Gaji pokok', p.base_salary], ['Bonus pulsa / paket', b.pulsa], ['Bonus service', b.service], ['Bonus head', b.head], ['Bonus lainnya / insentif', b.lain]].filter(x=>x[1] > 0);
+  const ded = [['Potongan kasbon', p.potong_kasbon], ['Potongan BPJS (karyawan/keluarga)', p.bpjs_potong], ['Potongan BPJS Ketenagakerjaan', p.bpjs_mode === 'potong' ? p.bpjs : 0], ['Potongan pinjaman', p.potong_pinjaman]].filter(x=>x[1] > 0);
+  const info = [];
+  if(p.bpjs && p.bpjs_mode !== 'potong') info.push(['BPJS Ketenagakerjaan (ditanggung perusahaan)', p.bpjs]);
+  if(p.sisa_pinjaman > 0 || p.potong_pinjaman > 0) info.push(['Sisa pinjaman', p.sisa_pinjaman]);
+  const totE = earn.reduce((s,x)=>s+x[1],0), totD = ded.reduce((s,x)=>s+x[1],0);
+  return { earn, ded, info, totE, totD, net: totE - totD };
+}
+function slipText(p){
+  const m = slipModel(p), f = formatCurrency, line = (a)=>`${a[0]}: ${f(a[1])}`;
+  return [`*SLIP GAJI / UANG LELAH*`, COMPANY_NAME, `Periode: ${payrollMonthLabel(p.month)}`, `Nama: ${p.employee_name}`, '',
+    '*PENDAPATAN*', ...m.earn.map(line), `Total pendapatan: ${f(m.totE)}`, '',
+    ...(m.ded.length ? ['*POTONGAN*', ...m.ded.map(line), `Total potongan: ${f(m.totD)}`, ''] : []),
+    `*DITERIMA: ${f(m.net)}*`, `Terbilang: ${terbilang(m.net)} rupiah`,
+    ...(m.info.length ? ['', '*INFORMASI*', ...m.info.map(line)] : []), '', `Dokumen ini dibuat otomatis oleh sistem ${COMPANY_NAME}.`].join('\n');
+}
+function slipHtml(p){
+  const m = slipModel(p), f = formatCurrency, rows = (arr)=>arr.map(a=>`<tr><td>${escapeHtml(a[0])}</td><td class="r">${f(a[1])}</td></tr>`).join('');
+  return `<h2>SLIP GAJI / UANG LELAH</h2><p class="sub"><b>${escapeHtml(COMPANY_NAME)}</b><br>Periode ${escapeHtml(payrollMonthLabel(p.month))}</p>
+    <table><tr><td style="width:90px;">Nama</td><td><b>${escapeHtml(p.employee_name)}</b></td></tr></table>
+    <table><tr class="sec"><td colspan="2">PENDAPATAN</td></tr>${rows(m.earn)}<tr class="tot"><td>Total pendapatan</td><td class="r">${f(m.totE)}</td></tr></table>
+    ${m.ded.length ? `<table><tr class="sec"><td colspan="2">POTONGAN</td></tr>${rows(m.ded)}<tr class="tot"><td>Total potongan</td><td class="r">${f(m.totD)}</td></tr></table>` : ''}
+    <table><tr class="net"><td>DITERIMA</td><td class="r">${f(m.net)}</td></tr></table>
+    <p style="margin:4px 0 10px;"><i>Terbilang: ${escapeHtml(terbilang(m.net))} rupiah</i></p>
+    ${m.info.length ? `<table><tr class="sec"><td colspan="2">INFORMASI</td></tr>${rows(m.info)}</table>` : ''}
+    <div class="sign"><div>Diterima oleh,<br>${escapeHtml(p.employee_name)}</div><div>Dibuat oleh,<br>Accounting</div></div>
+    <p style="text-align:center; color:#777; font-size:11px; margin-top:12px;">Dibuat otomatis oleh sistem ${escapeHtml(COMPANY_NAME)}</p>`;
+}
+let slipCurrent = null;
+function openSlip(id){
+  const p = data.payroll.find(x=>x.id===id); if(!p) return;
+  slipCurrent = p; document.getElementById('slipBody').innerHTML = slipHtml(p); document.getElementById('slipModal').style.display = 'flex';
+}
+document.getElementById('slipCloseBtn').addEventListener('click', ()=>{ document.getElementById('slipModal').style.display = 'none'; });
+document.getElementById('slipPrintBtn').addEventListener('click', ()=>window.print());
+document.getElementById('slipWaBtn').addEventListener('click', ()=>{ if(slipCurrent) window.open('https://wa.me/?text=' + encodeURIComponent(slipText(slipCurrent)), '_blank'); });
+document.getElementById('slipCopyBtn').addEventListener('click', async ()=>{
+  if(!slipCurrent) return; const text = slipText(slipCurrent), btn = document.getElementById('slipCopyBtn');
+  try{ await navigator.clipboard.writeText(text); }catch(e){ const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); }catch(_){} ta.remove(); }
+  btn.textContent = 'Tersalin ✓'; setTimeout(()=>{ btn.textContent = 'Salin teks'; }, 1800);
+});
 
 function renderProjection(){
   const months = parseInt(document.getElementById('projMonths').value, 10);
@@ -2810,8 +3000,8 @@ function renderEmployees(){
   document.getElementById('empFormCard').style.display = data.empReady ? '' : 'none';
   const owner = currentRole === 'owner';
   const sisaKasbon = (name)=> data.kasbon.filter(k=>(k.employee_name||'').trim().toLowerCase()===name.trim().toLowerCase()).reduce((s,k)=>s+Math.max(0,tRecordSisa('kasbon',k)),0);
-  body.innerHTML = data.employees.map(e=>`<tr ${e.is_active===false?'style="opacity:.6;"':''}><td><b>${escapeHtml(e.name)}</b>${e.is_active===false?' <span class="pill pill-purple">nonaktif</span>':''}</td><td>${escapeHtml(e.notes||'')}</td><td class="right">${formatCurrency(sisaKasbon(e.name))}</td>
-    <td class="right"><button class="ghost" data-emp="rename" data-id="${e.id}" style="padding:4px 10px; font-size:12px;">Ubah nama</button> <button class="ghost" data-emp="toggle" data-id="${e.id}" style="padding:4px 10px; font-size:12px;">${e.is_active===false?'Aktifkan':'Nonaktifkan'}</button>${owner?` <button class="del-btn" data-emp="del" data-id="${e.id}">Hapus</button>`:''}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Belum ada karyawan.</td></tr>';
+  body.innerHTML = data.employees.map(e=>`<tr ${e.is_active===false?'style="opacity:.6;"':''}><td><b>${escapeHtml(e.name)}</b>${e.is_active===false?' <span class="pill pill-purple">nonaktif</span>':''}</td><td class="right">${formatCurrency(e.base_salary||0)}</td><td class="right">${formatCurrency(e.bonus_pulsa||0)}</td><td class="right">${e.bpjs ? formatCurrency(e.bpjs) + '<br><span class="helper" style="margin:0;">' + (e.bpjs_mode==='potong'?'potong gaji':'perusahaan') + '</span>' : '-'}</td><td class="right">${(e.bpjs_potong||e.cicilan_pinjaman) ? (e.bpjs_potong?'BPJS '+formatCurrency(e.bpjs_potong):'') + (e.cicilan_pinjaman?'<br>Cicilan '+formatCurrency(e.cicilan_pinjaman):'') + (e.pinjaman_awal?'<br><span class="helper" style="margin:0;">sisa pinjaman '+formatCurrency(e.pinjaman_awal)+'</span>':'') : '-'}</td><td>${escapeHtml(e.notes||'')}</td><td class="right">${formatCurrency(sisaKasbon(e.name))}</td>
+    <td class="right"><button class="ghost" data-emp="edit" data-id="${e.id}" style="padding:4px 10px; font-size:12px;">Ubah gaji</button> <button class="ghost" data-emp="rename" data-id="${e.id}" style="padding:4px 10px; font-size:12px;">Ubah nama</button> <button class="ghost" data-emp="toggle" data-id="${e.id}" style="padding:4px 10px; font-size:12px;">${e.is_active===false?'Aktifkan':'Nonaktifkan'}</button>${owner?` <button class="del-btn" data-emp="del" data-id="${e.id}">Hapus</button>`:''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Belum ada karyawan.</td></tr>';
   const un = data.empReady ? empUnmatched() : [];
   document.getElementById('empUnmatchedCard').style.display = un.length ? '' : 'none';
   const opts = data.employees.filter(e=>e.is_active!==false).map(e=>`<option value="${escapeHtml(e.name)}">${escapeHtml(e.name)}</option>`).join('');
@@ -2829,19 +3019,46 @@ async function empCascadeRename(oldName, newName){
   await upd('kasbon','employee_name', data.kasbon); await upd('payroll','employee_name', data.payroll);
   await upd('transactions','loan_party', data.transactions.filter(t=>t.payment_method==='kasbon'));
 }
+let empEditingId = null;
+function empResetForm(){
+  empEditingId = null;
+  ['empName','empNotes','empSalary','empPulsa','empBpjs','empBpjsPot','empCicilan','empPinjAwal'].forEach(id=>document.getElementById(id).value = '');
+  document.getElementById('empBpjsMode').value = 'perusahaan'; document.getElementById('addEmpBtn').textContent = 'Tambah karyawan'; document.getElementById('empCancelEdit').style.display = 'none';
+  document.getElementById('empName').disabled = false;
+}
+document.getElementById('empCancelEdit').addEventListener('click', empResetForm);
 document.getElementById('addEmpBtn').addEventListener('click', async ()=>{
+  if(empEditingId !== null){
+    const emp = data.employees.find(x=>x.id===empEditingId); if(!emp){ empResetForm(); return; }
+    if(!data.payV2){ alert('Jalankan migration-gaji.sql di Supabase terlebih dahulu.'); return; }
+    const upd = { notes: document.getElementById('empNotes').value.trim() || null, base_salary: parseFloat(document.getElementById('empSalary').value)||0, bonus_pulsa: parseFloat(document.getElementById('empPulsa').value)||0, bpjs: parseFloat(document.getElementById('empBpjs').value)||0, bpjs_mode: document.getElementById('empBpjsMode').value, bpjs_potong: parseFloat(document.getElementById('empBpjsPot').value)||0, cicilan_pinjaman: parseFloat(document.getElementById('empCicilan').value)||0, pinjaman_awal: parseFloat(document.getElementById('empPinjAwal').value)||0 };
+    const { error } = await sb.from('employees').update(upd).eq('id', empEditingId);
+    if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+    logActivity('update', 'employees', `Ubah data gaji ${emp.name}: pokok ${formatCurrency(upd.base_salary)}, pulsa ${formatCurrency(upd.bonus_pulsa)}, BPJS ${formatCurrency(upd.bpjs)}`);
+    empResetForm(); flashSaved(); await loadAllData(); renderAll(); return;
+  }
   const name = document.getElementById('empName').value.trim().replace(/\s+/g,' ');
   if(!name){ alert('Isi nama karyawan.'); return; }
   if(data.employees.some(e=>e.name.trim().toLowerCase()===name.toLowerCase())){ alert('Nama ini sudah ada di daftar.'); return; }
-  const { error } = await sb.from('employees').insert({ name, notes: document.getElementById('empNotes').value.trim() || null, created_by: currentUsername });
-  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
-  document.getElementById('empName').value = ''; document.getElementById('empNotes').value = '';
+  const row = { name, notes: document.getElementById('empNotes').value.trim() || null };
+  const pay = { base_salary: parseFloat(document.getElementById('empSalary').value)||0, bonus_pulsa: parseFloat(document.getElementById('empPulsa').value)||0, bpjs: parseFloat(document.getElementById('empBpjs').value)||0, bpjs_mode: document.getElementById('empBpjsMode').value, bpjs_potong: parseFloat(document.getElementById('empBpjsPot').value)||0, cicilan_pinjaman: parseFloat(document.getElementById('empCicilan').value)||0, pinjaman_awal: parseFloat(document.getElementById('empPinjAwal').value)||0 };
+  if(data.payV2 || pay.base_salary || pay.bonus_pulsa || pay.bpjs || pay.bpjs_potong || pay.cicilan_pinjaman || pay.pinjaman_awal) Object.assign(row, pay);
+  const { error } = await sb.from('employees').insert({ ...row, created_by: currentUsername });
+  if(error){ alert('Gagal menyimpan: ' + error.message + (/column/i.test(error.message) ? '\n\nJalankan migration-gaji.sql di Supabase terlebih dahulu.' : '')); return; }
+  empResetForm();
   logActivity('create', 'employees', 'Karyawan ' + name); flashSaved(); await loadAllData(); renderAll();
 });
 document.getElementById('subview-karyawan').addEventListener('click', async (e)=>{
   const b = e.target.closest('button[data-emp]'); if(!b) return;
   const act = b.dataset.emp; let id = parseInt(b.dataset.id,10); const emp = data.employees.find(x=>x.id===id);
   try{
+    if(act === 'edit'){
+      empEditingId = id;
+      document.getElementById('empName').value = emp.name; document.getElementById('empName').disabled = true; document.getElementById('empNotes').value = emp.notes || '';
+      document.getElementById('empSalary').value = emp.base_salary || ''; document.getElementById('empPulsa').value = emp.bonus_pulsa || ''; document.getElementById('empBpjs').value = emp.bpjs || ''; document.getElementById('empBpjsPot').value = emp.bpjs_potong || ''; document.getElementById('empCicilan').value = emp.cicilan_pinjaman || ''; document.getElementById('empPinjAwal').value = emp.pinjaman_awal || '';
+      document.getElementById('empBpjsMode').value = emp.bpjs_mode || 'perusahaan'; document.getElementById('addEmpBtn').textContent = 'Simpan perubahan'; document.getElementById('empCancelEdit').style.display = '';
+      window.scrollTo({top:0, behavior:'smooth'}); return;
+    }
     if(act === 'rename'){
       const nn = (prompt('Nama baru untuk "' + emp.name + '" (semua catatan kasbon & gaji ikut berubah):', emp.name) || '').trim().replace(/\s+/g,' ');
       if(!nn || nn === emp.name) return;
@@ -2920,7 +3137,7 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.kasbon.map(k => ({ Tanggal:k.date||'', Karyawan:k.employee_name, 'Kasbon (Rp)':k.amount, 'Terbayar (Rp)':paidFor(data.kasbonPayments,'kasbon_id',k.id), 'Sisa (Rp)':k.amount-paidFor(data.kasbonPayments,'kasbon_id',k.id), Catatan:k.notes||'' }))), 'Kasbon Karyawan');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.kasbonPayments.map(p => { const rec=data.kasbon.find(k=>k.id===p.kasbon_id); return { Tanggal:p.date, Karyawan:rec?rec.employee_name:'', 'Jumlah (Rp)':p.amount, Catatan:p.notes||'', 'Dicatat oleh':p.created_by||'' }; })), 'Pembayaran Kasbon');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.budgets.map(b => ({ Kategori:b.category, 'Anggaran (Rp)':b.amount }))), 'Anggaran');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.payroll.map(p => ({ Bulan:payrollMonthLabel(p.month), Karyawan:p.employee_name, 'Gaji pokok (Rp)':p.base_salary, 'Bonus (Rp)':p.bonus, 'Total (Rp)':p.base_salary+p.bonus, Catatan:p.notes||'' }))), 'Gaji & Bonus');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.payroll.map(p => ({ Bulan:payrollMonthLabel(p.month), Karyawan:p.employee_name, 'Gaji pokok (Rp)':p.base_salary, 'Bonus pulsa (Rp)':payParts(p).pulsa, 'Bonus service (Rp)':payParts(p).service, 'Bonus head (Rp)':payParts(p).head, 'Bonus lainnya (Rp)':payParts(p).lain, 'BPJS (Rp)':p.bpjs||0, 'BPJS ditanggung':p.bpjs ? (p.bpjs_mode==='potong'?'Karyawan':'Perusahaan') : '', 'Potongan kasbon (Rp)':p.potong_kasbon||0, 'Potongan BPJS (Rp)':p.bpjs_potong||0, 'Potongan pinjaman (Rp)':p.potong_pinjaman||0, 'Sisa pinjaman (Rp)':p.sisa_pinjaman||0, 'Diterima (Rp)':payNet(p), 'Biaya perusahaan (Rp)':payCost(p), Catatan:p.notes||'' }))), 'Gaji & Bonus');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.savings.map(x => ({ Tanggal:x.date, Jenis:x.jenis, 'Jumlah (Rp)':x.amount, 'Dihitung sebagai pengeluaran':SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase())?'Ya':'Tidak', Catatan:x.notes||'' }))), 'Tabungan');
   const agg = monthlyAggregates();
   const gajiSavingsXls = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
@@ -2999,7 +3216,7 @@ function exportPdf(){
   y = doc.lastAutoTable.finalY + 12;
   if(y > 220){ doc.addPage(); y = 18; }
   doc.text('Gaji & bonus karyawan', 14, y);
-  doc.autoTable({ startY: y+4, head: [['Bulan', 'Karyawan', 'Gaji pokok', 'Bonus', 'Total']], body: [...data.payroll].sort((a,b)=>b.month.localeCompare(a.month)).map(p => [payrollMonthLabel(p.month), p.employee_name, formatCurrency(p.base_salary), formatCurrency(p.bonus), formatCurrency(p.base_salary+p.bonus)]), theme: 'grid', headStyles: {fillColor: [42,120,214]}, styles: {fontSize: 8} });
+  doc.autoTable({ startY: y+4, head: [['Bulan', 'Karyawan', 'Gaji pokok', 'Bonus', 'BPJS', 'Diterima']], body: [...data.payroll].sort((a,b)=>b.month.localeCompare(a.month)).map(p => [payrollMonthLabel(p.month), p.employee_name, formatCurrency(p.base_salary), formatCurrency(p.bonus), p.bpjs ? formatCurrency(p.bpjs) + (p.bpjs_mode==='potong'?' (potong)':' (perush.)') : '-', formatCurrency(payNet(p))]), theme: 'grid', headStyles: {fillColor: [42,120,214]}, styles: {fontSize: 8} });
   y = doc.lastAutoTable.finalY + 12;
   if(y > 220){ doc.addPage(); y = 18; }
   doc.text('Riwayat tabungan', 14, y);
@@ -3508,21 +3725,6 @@ document.querySelectorAll('.subtab').forEach(st=>{
   });
 });
 
-document.getElementById('addPayrollBtn').addEventListener('click', async ()=>{
-  const name = document.getElementById('pName').value.trim();
-  const month = document.getElementById('pMonth').value; // 'YYYY-MM'
-  const salary = parseFloat(document.getElementById('pSalary').value);
-  const bonus = parseFloat(document.getElementById('pBonus').value) || 0;
-  const notes = document.getElementById('pNotes').value.trim();
-  if(!name || !month || isNaN(salary) || salary < 0){ alert('Mohon lengkapi nama karyawan, bulan, dan gaji pokok yang valid.'); return; }
-  const { error } = await sb.from('payroll').insert({ employee_name: name, month, base_salary: salary, bonus, notes });
-  if(error){ alert('Gagal menyimpan: ' + error.message); return; }
-  document.getElementById('pName').value=''; document.getElementById('pSalary').value='';
-  document.getElementById('pBonus').value=''; document.getElementById('pNotes').value='';
-  flashSaved(); await loadAllData(); renderPayroll();
-  logActivity('create', 'payroll', `Gaji & bonus ${name} bulan ${month} - ${formatCurrency(salary+bonus)}`);
-});
-
 document.getElementById('payrollFilterMonth').addEventListener('change', renderPayroll);
 document.getElementById('clearPayrollFilterBtn').addEventListener('click', ()=>{
   document.getElementById('payrollFilterMonth').value = '';
@@ -3697,6 +3899,8 @@ document.body.addEventListener('click', async (e)=>{
     const rec = data.budgets.find(b=>b.id===id);
     const { error } = await sb.from('budgets').delete().eq('id', id);
     if(!error){ await loadAllData(); renderBudgets(); logActivity('delete', 'budgets', rec ? `${rec.category} ${formatCurrency(rec.amount)}` : `id ${id}`); }
+  } else if(action === 'slipPayroll'){
+    openSlip(parseInt(btn.dataset.id,10));
   } else if(action === 'delPayroll'){
     const id = parseInt(btn.dataset.id,10);
     const rec = data.payroll.find(p=>p.id===id);
