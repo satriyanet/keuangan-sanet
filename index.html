@@ -383,6 +383,7 @@
             <option value="Lainnya">Lainnya...</option>
           </select>
           <input type="text" id="svTypeCustom" placeholder="Nama jenis tabungan" style="display:none;">
+          <select id="svOrigin" aria-label="Asal dana"><option value="kas">Setor dari kas (mengurangi kas)</option><option value="opening_balance">Saldo awal: tabungan yang sudah ada (tidak mengurangi kas)</option></select>
           <input type="number" id="svAmount" placeholder="Jumlah (Rp)">
           <input type="text" id="svNotes" placeholder="Catatan (opsional)">
           <button class="primary" id="addSavingsBtn">Tambah setoran</button>
@@ -1500,12 +1501,14 @@ function financialTotals(){
 
   // Tabungan perusahaan (pool utama) TIDAK termasuk dana pass-through (Service/PSB, Voucher) — itu pool terpisah
   const totalSavings = data.savings.filter(x => !isPassthroughSavingsType(x.jenis)).reduce((s,x)=>s+x.amount,0);
+  // Saldo awal tabungan (uang yang sudah ada sebelum pencatatan) menambah saldo tabungan tetapi TIDAK mengurangi kas dan bukan pengeluaran
+  const totalSavingsCash = data.savings.filter(x => !isPassthroughSavingsType(x.jenis) && x.source !== 'opening_balance').reduce((s,x)=>s+x.amount,0);
   const totalServiceFund = data.savings.filter(x => (x.jenis||'').toLowerCase()==='service/psb').reduce((s,x)=>s+x.amount,0);
   const totalVoucherFund = data.savings.filter(x => (x.jenis||'').toLowerCase()==='voucher').reduce((s,x)=>s+x.amount,0);
 
   // Setoran (bukan penarikan) tabungan gaji/profit dihitung sebagai pengeluaran saat disetor
   const totalSavingsAsExpense = data.savings
-    .filter(x => x.amount > 0 && SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase()))
+    .filter(x => x.amount > 0 && x.source !== 'opening_balance' && SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase()))
     .reduce((s,x)=>s+x.amount,0);
 
   // Pengeluaran yang didanai tabungan gaji/profit -> tidak dihitung lagi (sudah dihitung saat disetor)
@@ -1523,7 +1526,7 @@ function financialTotals(){
   const totalExpenseTxNonTabungan = totalExpenseTx - tabunganExpenseGajiProfit - tabunganExpenseOther - balanceSheetExpense;
   const totalExpense = totalExpenseTx - tabunganExpenseGajiProfit - balanceSheetExpense + totalSavingsAsExpense; // dipakai untuk Laba Bersih
   const netProfit = totalIncome - totalExpense;
-  const cashBalance = totalIncomeForCash - totalExpenseTx + tagihanExpense - totalSavings; // semua tabungan (setoran & tarikan) + piutang/hutang/kasbon mengurangi/menambah kas
+  const cashBalance = totalIncomeForCash - totalExpenseTx + tagihanExpense - totalSavingsCash; // semua tabungan (setoran & tarikan) + piutang/hutang/kasbon mengurangi/menambah kas
 
   return {
     totalIncome, totalExpenseTx, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther,
@@ -1678,8 +1681,8 @@ function renderTransactions(){
 
 function renderLaporan(){
   const { totalIncome, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther, totalSavings, totalServiceFund, serviceIncome, totalVoucherFund, voucherIncome, balanceSheetIncome, balanceSheetExpense, totalSavingsAsExpense, netProfit, cashBalance } = financialTotals();
-  const gajiSavingsDeposit = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
-  const profitSavingsDeposit = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
+  const gajiSavingsDeposit = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
+  const profitSavingsDeposit = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
 
   const hutangDiterima = data.transactions.filter(t=>t.amount>=0 && t.payment_method==='hutang').reduce((s,t)=>s+t.amount,0);
   const piutangDiberikan = Math.abs(data.transactions.filter(t=>t.amount<0 && t.payment_method==='piutang').reduce((s,t)=>s+t.amount,0));
@@ -2388,7 +2391,7 @@ function renderSavings(){
       tbody.innerHTML = filtered.map(x => {
         running += x.amount;
         const isWithdrawal = x.amount < 0;
-        const badge = isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
+        const badge = isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'opening_balance' ? '<span class="pill pill-amber">Saldo awal</span>' : x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
         return `
         <tr>
           <td>${x.date}</td>
@@ -2396,7 +2399,7 @@ function renderSavings(){
           <td class="right" style="font-weight:600; color:${isWithdrawal?'var(--red)':'var(--text)'};">${formatCurrency(x.amount)}</td>
           <td class="right" style="font-weight:600;">${formatCurrency(running)}</td>
           <td>${escapeHtml(x.notes||'-')}</td>
-          <td class="right"><button class="del-btn" data-id="${x.id}" data-action="delSavings">Hapus</button></td>
+          <td class="right">${(!x.source && !x.related_transaction_id && x.amount>0) ? `<button class="ghost" data-action="svOpening" data-id="${x.id}" style="padding:4px 10px; font-size:12px;">Jadikan saldo awal</button> ` : ''}<button class="del-btn" data-id="${x.id}" data-action="delSavings">Hapus</button></td>
         </tr>`;
       }).join('');
     }
@@ -2410,14 +2413,14 @@ function renderSavings(){
     } else {
       tbody.innerHTML = sorted.map(x => {
         const isWithdrawal = x.amount < 0;
-        const badge = isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
+        const badge = isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'opening_balance' ? '<span class="pill pill-amber">Saldo awal</span>' : x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
         return `
         <tr>
           <td>${x.date}</td>
           <td>${escapeHtml(x.jenis)} ${badge}</td>
           <td class="right" style="font-weight:600; color:${isWithdrawal?'var(--red)':'var(--text)'};">${formatCurrency(x.amount)}</td>
           <td>${escapeHtml(x.notes||'-')}</td>
-          <td class="right"><button class="del-btn" data-id="${x.id}" data-action="delSavings">Hapus</button></td>
+          <td class="right">${(!x.source && !x.related_transaction_id && x.amount>0) ? `<button class="ghost" data-action="svOpening" data-id="${x.id}" style="padding:4px 10px; font-size:12px;">Jadikan saldo awal</button> ` : ''}<button class="del-btn" data-id="${x.id}" data-action="delSavings">Hapus</button></td>
         </tr>`;
       }).join('');
     }
@@ -3140,8 +3143,8 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.payroll.map(p => ({ Bulan:payrollMonthLabel(p.month), Karyawan:p.employee_name, 'Gaji pokok (Rp)':p.base_salary, 'Bonus pulsa (Rp)':payParts(p).pulsa, 'Bonus service (Rp)':payParts(p).service, 'Bonus head (Rp)':payParts(p).head, 'Bonus lainnya (Rp)':payParts(p).lain, 'BPJS (Rp)':p.bpjs||0, 'BPJS ditanggung':p.bpjs ? (p.bpjs_mode==='potong'?'Karyawan':'Perusahaan') : '', 'Potongan kasbon (Rp)':p.potong_kasbon||0, 'Potongan BPJS (Rp)':p.bpjs_potong||0, 'Potongan pinjaman (Rp)':p.potong_pinjaman||0, 'Sisa pinjaman (Rp)':p.sisa_pinjaman||0, 'Diterima (Rp)':payNet(p), 'Biaya perusahaan (Rp)':payCost(p), Catatan:p.notes||'' }))), 'Gaji & Bonus');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.savings.map(x => ({ Tanggal:x.date, Jenis:x.jenis, 'Jumlah (Rp)':x.amount, 'Dihitung sebagai pengeluaran':SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase())?'Ya':'Tidak', Catatan:x.notes||'' }))), 'Tabungan');
   const agg = monthlyAggregates();
-  const gajiSavingsXls = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
-  const profitSavingsXls = data.savings.filter(x=>x.amount>0 && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
+  const gajiSavingsXls = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
+  const profitSavingsXls = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
     { Keterangan: 'Pendapatan penjualan', 'Jumlah (Rp)': totalIncome },
     { Keterangan: 'Biaya operasional (cash/transfer)', 'Jumlah (Rp)': -financialTotals().totalExpenseTxNonTabungan },
@@ -3743,14 +3746,15 @@ document.getElementById('addSavingsBtn').addEventListener('click', async ()=>{
   const amount = parseFloat(document.getElementById('svAmount').value);
   const notes = document.getElementById('svNotes').value.trim();
   if(!date || !jenis || isNaN(amount) || amount <= 0){ alert('Mohon lengkapi tanggal, jenis tabungan, dan jumlah yang valid.'); return; }
-  const { error } = await sb.from('savings').insert({ date, jenis, amount, notes, created_by: currentUsername });
+  const isOpening = document.getElementById('svOrigin').value === 'opening_balance';
+  const { error } = await sb.from('savings').insert({ date, jenis, amount, notes, created_by: currentUsername, ...(isOpening ? { source: 'opening_balance' } : {}) });
   if(error){ alert('Gagal menyimpan: ' + error.message); return; }
   document.getElementById('svAmount').value=''; document.getElementById('svNotes').value='';
   document.getElementById('svTypeCustom').value=''; document.getElementById('svTypeCustom').style.display='none';
-  document.getElementById('svType').value = 'Gaji';
+  document.getElementById('svType').value = 'Gaji'; document.getElementById('svOrigin').value = 'kas';
   document.getElementById('svDate').value = new Date().toISOString().slice(0,10);
   flashSaved(); await loadAllData(); renderSavings(); renderDashboard(); renderLaporan();
-  logActivity('create', 'savings', `Setoran tabungan ${jenis} ${formatCurrency(amount)}`);
+  logActivity('create', 'savings', `${isOpening ? 'Saldo awal tabungan' : 'Setoran tabungan'} ${jenis} ${formatCurrency(amount)}`);
 });
 
 document.getElementById('projMonths').addEventListener('input', renderProjection);
@@ -3906,6 +3910,12 @@ document.body.addEventListener('click', async (e)=>{
     const rec = data.payroll.find(p=>p.id===id);
     const { error } = await sb.from('payroll').delete().eq('id', id);
     if(!error){ await loadAllData(); renderPayroll(); logActivity('delete', 'payroll', rec ? `${rec.employee_name} bulan ${rec.month}` : `id ${id}`); }
+  } else if(action === 'svOpening'){
+    const id = parseInt(btn.dataset.id,10), rec = data.savings.find(x=>x.id===id); if(!rec) return;
+    if(!confirm(`Jadikan ${rec.jenis} ${formatCurrency(rec.amount)} sebagai SALDO AWAL tabungan?\n\nUangnya dianggap sudah ada sebelumnya: kas tidak lagi berkurang dan tidak dihitung sebagai pengeluaran.`)) return;
+    const { error } = await sb.from('savings').update({ source: 'opening_balance' }).eq('id', id);
+    if(error){ alert('Gagal: ' + error.message); return; }
+    await loadAllData(); renderAll(); logActivity('update', 'savings', `Jadikan saldo awal ${rec.jenis} ${formatCurrency(rec.amount)}`);
   } else if(action === 'delSavings'){
     const id = parseInt(btn.dataset.id,10);
     const rec = data.savings.find(x=>x.id===id);
@@ -4046,7 +4056,9 @@ function akBuildAutoJournal(d){
       return;
     }
     const tab = akSavingAccount(j);
-    if(s.amount > 0){
+    if(s.amount > 0 && s.source === 'opening_balance'){
+      add(ref, s.date, ref, 'Saldo awal tabungan '+s.jenis+(s.notes?' - '+s.notes:''), [[tab,amt,0],['3-2000',0,amt]], o);
+    } else if(s.amount > 0){
       const lines = [[tab,amt,0],['1-1100',0,amt]];
       if(SAVINGS_AS_EXPENSE_TYPES.includes(j)){ lines.push(['6-2000',amt,0]); lines.push(['3-3000',0,amt]); }
       add(ref, s.date, ref, 'Setoran tabungan '+s.jenis+(s.notes?' - '+s.notes:''), lines, o);
