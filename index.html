@@ -2805,6 +2805,11 @@ function fillTxAccountOptions(){
     bankEl.innerHTML = banks.map(a=>{ const nm = a.name.replace(/^bank\s+/i,''); return `<option value="${escapeHtml(nm)}">Transfer ${escapeHtml(nm)}</option>`; }).join('') + '<option value="Lainnya">Bank lainnya...</option>';
     if([...bankEl.options].some(o=>o.value===cur)) bankEl.value = cur;
   }
+  // daftar bank di Rekonsiliasi Bank mengikuti COA (1-12xx)
+  const bankNames = coa.filter(a=>/^1-12\d\d$/.test(a.code) && a.code!=='1-1290').sort((a,b)=>a.code.localeCompare(b.code)).map(a=>a.name.replace(/^bank\s+/i,''));
+  const selBank = document.getElementById('akBankSel'), selFilter = document.getElementById('akRecBankFilter');
+  if(selBank){ const cur = selBank.value; selBank.innerHTML = bankNames.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('') + '<option value="Lainnya">Bank lainnya</option>'; if([...selBank.options].some(o=>o.value===cur)) selBank.value = cur; }
+  if(selFilter){ const cur = selFilter.value; selFilter.innerHTML = '<option value="">Semua bank</option>' + bankNames.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('') + '<option value="Lainnya">Lainnya</option>'; if([...selFilter.options].some(o=>o.value===cur)) selFilter.value = cur; }
   // pilihan akun kas untuk metode Cash (COA 1-11xx)
   const cashEl = document.getElementById('tCashAcct');
   if(cashEl){
@@ -4600,6 +4605,11 @@ function akBankCandidates(){
     if(!viaBank || !t.amount) return;
     out.push({key:'transaction:'+t.id, type:'transaction', id:t.id, date:t.date, acct:akBankAccount(t.bank), dir:t.amount>0?'masuk':'keluar', amount:Math.abs(t.amount), desc:t.description||t.category||'Transaksi', bank:t.bank||'-'});
   });
+  (data.transfers||[]).forEach(t=>{ // pindah dana: sisi yang menyentuh rekening bank (kode 1-12xx) muncul sebagai catatan internal
+    const a = Math.abs(t.amount), to = trAcctCode(t.bank), from = trAcctCode(t.loan_party);
+    if(/^1-12\d\d$/.test(to)) out.push({key:'transaction:'+t.id+':masuk', type:'transaction', id:t.id, date:t.date, acct:to, dir:'masuk', amount:a, desc:(t.description||'Pindah dana')+' (pindah dana)', bank:akAccName(data,to)});
+    if(/^1-12\d\d$/.test(from)) out.push({key:'transaction:'+t.id+':keluar', type:'transaction', id:t.id, date:t.date, acct:from, dir:'keluar', amount:a, desc:(t.description||'Pindah dana')+' (pindah dana)', bank:akAccName(data,from)});
+  });
   (data.invoicePayments||[]).forEach(p=>{
     if(p.method!=='transfer') return;
     const v = (data.invoices||[]).find(x=>x.id===p.invoice_id); if(!v) return;
@@ -4608,7 +4618,7 @@ function akBankCandidates(){
   return out;
 }
 function akDayDiff(a,b){ return Math.abs((new Date(a)-new Date(b))/86400000); }
-function akMatchedKeys(){ return new Set((data.bankLines||[]).filter(b=>b.matched_type && b.matched_id!=null && b.matched_type!=='journal').map(b=>b.matched_type+':'+b.matched_id)); }
+function akMatchedKeys(){ const set = new Set(); (data.bankLines||[]).filter(b=>b.matched_type && b.matched_id!=null && b.matched_type!=='journal').forEach(b=>{ set.add(b.matched_type+':'+b.matched_id); set.add(b.matched_type+':'+b.matched_id+':'+b.direction); }); return set; }
 function akFindMatches(line, cands, used){
   return cands.filter(c=>!used.has(c.key) && c.acct===akBankAccount(line.bank) && c.dir===line.direction && Math.abs(c.amount-line.amount)<=AK_EPS)
     .sort((x,y)=>akDayDiff(x.date,line.date)-akDayDiff(y.date,line.date));
@@ -4630,7 +4640,7 @@ function renderAkBank(){
   document.getElementById('akBsTable').innerHTML = rows.map(b=>{
     let matchTxt = '', action = '';
     if(b.matched_type){
-      const c = cands.find(x=>x.key===b.matched_type+':'+b.matched_id);
+      const c = cands.find(x=>x.key===b.matched_type+':'+b.matched_id) || cands.find(x=>x.key===b.matched_type+':'+b.matched_id+':'+b.direction);
       matchTxt = b.matched_type==='journal' ? `Jurnal penyesuaian #${b.matched_id}` : (c ? `${c.date} · ${escapeHtml(c.desc)}` : `${b.matched_type} #${b.matched_id}`);
       action = `<button class="del-btn" style="color:var(--text2);" data-akunmatch="${b.id}">Batalkan</button>`;
     } else {
