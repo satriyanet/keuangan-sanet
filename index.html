@@ -468,7 +468,7 @@
     <div class="subview active" id="subview-piutang-list">
       <div class="card">
         <h3>Pinjaman &amp; pembayaran dicatat lewat "Transaksi baru"</h3>
-        <p class="helper" style="margin-top:0;">Pinjaman baru, pembayaran/cicilan, dan tagihan semua diinput di <b>Transaksi → Transaksi baru</b>. Daftar di bawah akan terisi dan terupdate otomatis.</p>
+        <p class="helper" style="margin-top:0;">Pinjaman baru, pembayaran/cicilan, dan tagihan semua diinput di <b>Transaksi → Transaksi baru</b>. Daftar di bawah akan terisi dan terupdate otomatis. <b>Data lama (sebelum reset)</b> dimasukkan lewat bagian "saldo awal" di bawah dan tidak mengubah kas.</p>
         <button class="primary" data-goto-tx="1">Buka Transaksi baru</button>
         <details style="margin-top:12px;"><summary class="helper" style="cursor:pointer;">Catat piutang lama / saldo awal (tidak mengubah kas)</summary>
         <div class="form-grid" style="margin-top:10px;">
@@ -531,7 +531,7 @@
     <div class="subview" id="subview-utang-list">
       <div class="card">
         <h3>Pinjaman &amp; pembayaran dicatat lewat "Transaksi baru"</h3>
-        <p class="helper" style="margin-top:0;">Pinjaman baru, pembayaran/cicilan, dan tagihan semua diinput di <b>Transaksi → Transaksi baru</b>. Daftar di bawah akan terisi dan terupdate otomatis.</p>
+        <p class="helper" style="margin-top:0;">Pinjaman baru, pembayaran/cicilan, dan tagihan semua diinput di <b>Transaksi → Transaksi baru</b>. Daftar di bawah akan terisi dan terupdate otomatis. <b>Data lama (sebelum reset)</b> dimasukkan lewat bagian "saldo awal" di bawah dan tidak mengubah kas.</p>
         <button class="primary" data-goto-tx="1">Buka Transaksi baru</button>
         <details style="margin-top:12px;"><summary class="helper" style="cursor:pointer;">Catat utang lama / saldo awal (tidak mengubah kas)</summary>
         <div class="form-grid" style="margin-top:10px;">
@@ -594,15 +594,16 @@
     <div class="subview" id="subview-kasbon-list">
       <div class="card">
         <h3>Pinjaman &amp; pembayaran dicatat lewat "Transaksi baru"</h3>
-        <p class="helper" style="margin-top:0;">Pinjaman baru, pembayaran/cicilan, dan tagihan semua diinput di <b>Transaksi → Transaksi baru</b>. Daftar di bawah akan terisi dan terupdate otomatis.</p>
+        <p class="helper" style="margin-top:0;">Pinjaman baru, pembayaran/cicilan, dan tagihan semua diinput di <b>Transaksi → Transaksi baru</b>. Daftar di bawah akan terisi dan terupdate otomatis. <b>Data lama (sebelum reset)</b> dimasukkan lewat bagian "saldo awal" di bawah dan tidak mengubah kas.</p>
         <button class="primary" data-goto-tx="1">Buka Transaksi baru</button>
-        <details style="margin-top:12px;"><summary class="helper" style="cursor:pointer;">Form kasbon langsung (alternatif, ikut mengubah kas)</summary>
+        <details style="margin-top:12px;"><summary class="helper" style="cursor:pointer;">Catat kasbon lama / saldo awal (tidak mengubah kas) · atau kasbon baru langsung</summary>
         <div class="form-grid" style="margin-top:10px;">
           <input type="date" id="kbDate">
           <select id="kbName" aria-label="Nama karyawan"></select>
           <input type="number" id="kbAmount" placeholder="Jumlah kasbon (Rp)">
           <select id="kbMethod">
-            <option value="cash">Diberikan Cash</option>
+            <option value="opening">Saldo awal: kasbon lama (TIDAK mengubah kas)</option>
+            <option value="cash">Diberikan Cash (kas berkurang)</option>
             <option value="transfer">Diberikan Transfer</option>
           </select>
           <input type="text" id="kbNotes" placeholder="Catatan (opsional)">
@@ -3623,6 +3624,12 @@ document.getElementById('addKasbonBtn').addEventListener('click', async ()=>{
   if(!employee_name || isNaN(amount) || amount<=0){ alert('Mohon lengkapi nama karyawan dan jumlah.'); return; }
   const { data: inserted, error } = await sb.from('kasbon').insert({ date, employee_name, amount, notes, created_by: currentUsername }).select();
   if(error){ alert('Gagal menyimpan: ' + error.message); return; }
+  if(method === 'opening'){ // kasbon lama: hanya dicatat di daftar kasbon, tanpa transaksi kas
+    document.getElementById('kbDate').value=''; document.getElementById('kbName').value=''; document.getElementById('kbAmount').value=''; document.getElementById('kbNotes').value='';
+    flashSaved(); await loadAllData(); renderAll();
+    logActivity('create', 'kasbon', `Saldo awal kasbon ${employee_name} ${formatCurrency(amount)}`);
+    return;
+  }
   const kasbonId = inserted && inserted[0] ? inserted[0].id : null;
   const { data: txInserted, error: txError } = await sb.from('transactions').insert({
     date, description: `Kasbon karyawan - ${employee_name}`, amount: -amount, category: 'Kasbon',
