@@ -342,17 +342,35 @@
           <h3 style="margin:0;">Daftar transaksi</h3>
           <span class="helper" id="transCount"></span>
         </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:10px;" id="transQuick">
+          <button class="ghost" data-q="today" style="padding:4px 12px; font-size:13px;">Hari ini</button>
+          <button class="ghost" data-q="yesterday" style="padding:4px 12px; font-size:13px;">Kemarin</button>
+          <button class="ghost" data-q="7d" style="padding:4px 12px; font-size:13px;">7 hari terakhir</button>
+          <button class="ghost" data-q="month" style="padding:4px 12px; font-size:13px;">Bulan ini</button>
+          <button class="ghost" data-q="lastmonth" style="padding:4px 12px; font-size:13px;">Bulan lalu</button>
+          <button class="ghost" data-q="all" style="padding:4px 12px; font-size:13px;">Semua tanggal</button>
+        </div>
         <div class="form-grid" style="margin-top:10px; align-items:end;">
-          <div>
-            <label class="helper" style="display:block; margin-bottom:4px;">Dari tanggal</label>
-            <input type="date" id="transFilterFrom">
-          </div>
-          <div>
-            <label class="helper" style="display:block; margin-bottom:4px;">Sampai tanggal</label>
-            <input type="date" id="transFilterTo">
-          </div>
+          <div><label class="helper" style="display:block; margin-bottom:4px;">Dari tanggal</label><input type="date" id="transFilterFrom"></div>
+          <div><label class="helper" style="display:block; margin-bottom:4px;">Sampai tanggal</label><input type="date" id="transFilterTo"></div>
+          <div><label class="helper" style="display:block; margin-bottom:4px;">Jenis</label><select id="transFilterType"><option value="">Semua</option><option value="in">Pemasukan saja</option><option value="out">Pengeluaran saja</option><option value="move">Pindah dana saja</option></select></div>
+          <div><label class="helper" style="display:block; margin-bottom:4px;">Metode</label><select id="transFilterMethod"><option value="">Semua metode</option><option value="cash">Cash</option><option value="transfer">Transfer</option><option value="tabungan">Tabungan</option><option value="piutang">Piutang</option><option value="hutang">Hutang</option><option value="kasbon">Kasbon</option><option value="tagihan">Tagihan belum dibayar</option><option value="service">Service/PSB</option><option value="voucher">Voucher</option><option value="pindah">Pindah dana</option></select></div>
+          <div><label class="helper" style="display:block; margin-bottom:4px;">Kategori</label><select id="transFilterCat"></select></div>
+          <div><label class="helper" style="display:block; margin-bottom:4px;">Dicatat oleh</label><select id="transFilterUser"></select></div>
+          <div><label class="helper" style="display:block; margin-bottom:4px;">Cari (nama/keterangan)</label><input type="text" id="transFilterSearch" placeholder="mis. endrawan"></div>
+          <div><label class="helper" style="display:block; margin-bottom:4px;">Urutkan</label><select id="transFilterSort"><option value="new">Terbaru</option><option value="old">Terlama</option><option value="big">Nominal terbesar</option><option value="small">Nominal terkecil</option></select></div>
           <button class="ghost" id="transFilterResetBtn">Reset filter</button>
         </div>
+        <div style="margin-top:12px;">
+          <p class="helper" style="margin:0 0 6px;">Periksa kemungkinan salah input (klik untuk menampilkan, klik lagi untuk batal):</p>
+          <div id="transCheckChips" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+        </div>
+        <div id="transSummary" style="display:flex; gap:18px; flex-wrap:wrap; margin-top:12px; padding:10px 12px; background:var(--bg2, rgba(0,0,0,.04)); border-radius:8px; font-size:14px;"></div>
+        <details style="margin-top:10px;" id="transDailyBox"><summary class="helper" style="cursor:pointer;">Rekap per hari &amp; hari yang belum ada transaksi (untuk mencocokkan dengan uang fisik / mencari data yang belum diinput)</summary>
+          <p class="helper" id="transDailyNote" style="margin:8px 0 4px;"></p>
+          <div style="overflow-x:auto; max-height:360px; overflow-y:auto;"><table><thead><tr><th>Tanggal</th><th class="right">Jumlah</th><th class="right">Masuk (+)</th><th class="right">Keluar (−)</th><th>Status</th></tr></thead><tbody id="transDailyBody"></tbody></table></div>
+        </details>
+        <div style="margin-top:10px;"><button class="ghost" id="transExportBtn" style="font-size:13px;">Unduh hasil filter (Excel)</button></div>
         <div style="overflow-x:auto; margin-top:10px;">
           <table>
             <thead><tr><th>Tanggal</th><th>Deskripsi</th><th>Kategori</th><th class="right">Jumlah</th><th>Metode</th><th>Dicatat oleh</th><th></th></tr></thead>
@@ -1627,15 +1645,88 @@ function renderCustomLegend(canvasId, items){
 const TRANS_PAGE_SIZE = 20;
 let transCurrentPage = 1;
 
+const TRANS_CHECKS = [['dup','Kemungkinan dobel'],['big','Nominal tak biasa'],['nocat','Tanpa kategori/keterangan'],['future','Tanggal di masa depan'],['noproof','Transfer tanpa bukti']];
+let transCheck = '';
+function txMedian(arr){ const a = [...arr].sort((x,y)=>x-y), m = Math.floor(a.length/2); return a.length ? (a.length%2 ? a[m] : (a[m-1]+a[m])/2) : 0; }
+function txComputeFlags(all){
+  const flags = new Map(), add = (id, f)=>{ if(!flags.has(id)) flags.set(id, new Set()); flags.get(id).add(f); };
+  const today = rcToday(), groups = {}, byCat = {};
+  all.forEach(t=>{
+    const k = [t.date, (t.description||'').trim().toLowerCase(), Math.abs(t.amount), t.payment_method].join('|'); (groups[k] = groups[k] || []).push(t);
+    if(t.payment_method !== 'pindah'){ const c = (t.category||'').trim().toLowerCase(); (byCat[c] = byCat[c] || []).push(Math.abs(t.amount)); }
+    if(!(t.category||'').trim() || !(t.description||'').trim()) add(t.id, 'nocat');
+    if(t.date > today) add(t.id, 'future');
+    if(t.payment_method === 'transfer' && !t.proof_path && !t.proof_url) add(t.id, 'noproof');
+  });
+  Object.values(groups).forEach(g=>{ if(g.length > 1) g.forEach(t=>add(t.id, 'dup')); });
+  const med = {}; Object.entries(byCat).forEach(([c, arr])=>{ if(arr.length >= 5) med[c] = txMedian(arr); });
+  all.forEach(t=>{ const c = (t.category||'').trim().toLowerCase(); if(t.payment_method !== 'pindah' && med[c] && Math.abs(t.amount) >= med[c]*5 && Math.abs(t.amount) >= 50000) add(t.id, 'big'); });
+  return flags;
+}
+const TX_FLAG_LABEL = { dup:'Dobel?', big:'Nominal besar', nocat:'Kosong', future:'Tgl masa depan', noproof:'Tanpa bukti' };
+function txFilterState(){
+  return { from: document.getElementById('transFilterFrom').value, to: document.getElementById('transFilterTo').value, type: document.getElementById('transFilterType').value,
+    method: document.getElementById('transFilterMethod').value, cat: document.getElementById('transFilterCat').value, user: document.getElementById('transFilterUser').value,
+    q: document.getElementById('transFilterSearch').value.trim().toLowerCase(), sort: document.getElementById('transFilterSort').value };
+}
+function txApplyFilters(all, f, flags, check){
+  let rows = all;
+  if(f.from) rows = rows.filter(t=>t.date >= f.from);
+  if(f.to) rows = rows.filter(t=>t.date <= f.to);
+  if(f.type === 'in') rows = rows.filter(t=>t.payment_method !== 'pindah' && t.amount > 0);
+  else if(f.type === 'out') rows = rows.filter(t=>t.payment_method !== 'pindah' && t.amount < 0);
+  else if(f.type === 'move') rows = rows.filter(t=>t.payment_method === 'pindah');
+  if(f.method) rows = rows.filter(t=>t.payment_method === f.method);
+  if(f.cat) rows = rows.filter(t=>(t.category||'') === f.cat);
+  if(f.user) rows = rows.filter(t=>(t.created_by||'') === f.user);
+  if(f.q) rows = rows.filter(t=>((t.description||'') + ' ' + (t.category||'') + ' ' + (t.loan_party||'')).toLowerCase().includes(f.q));
+  if(check) rows = rows.filter(t=>flags.has(t.id) && flags.get(t.id).has(check));
+  return rows;
+}
+function txSortRows(rows, mode){
+  const r = [...rows];
+  if(mode === 'old') return r.sort((a,b)=>a.date.localeCompare(b.date) || a.id - b.id);
+  if(mode === 'big') return r.sort((a,b)=>Math.abs(b.amount) - Math.abs(a.amount));
+  if(mode === 'small') return r.sort((a,b)=>Math.abs(a.amount) - Math.abs(b.amount));
+  return r.sort((a,b)=>b.date.localeCompare(a.date) || b.id - a.id);
+}
+function txFillFilterOptions(all){
+  const fill = (id, label, values)=>{ const el = document.getElementById(id), cur = el.value; el.innerHTML = `<option value="">${label}</option>` + values.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join(''); if(values.includes(cur)) el.value = cur; };
+  fill('transFilterCat', 'Semua kategori', [...new Set(all.map(t=>t.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b)));
+  fill('transFilterUser', 'Semua pengguna', [...new Set(all.map(t=>t.created_by).filter(Boolean))].sort((a,b)=>a.localeCompare(b)));
+}
+function txDayName(d){ return ['Min','Sen','Sel','Rab','Kam','Jum','Sab'][new Date(d + 'T00:00:00').getDay()]; }
+function txRenderDaily(all, f){
+  const today = rcToday(), from = f.from || today.slice(0,8) + '01', to = f.to || today;
+  const note = document.getElementById('transDailyNote'), body = document.getElementById('transDailyBody');
+  const days = Math.round((new Date(to + 'T00:00:00') - new Date(from + 'T00:00:00')) / 86400000) + 1;
+  if(days > 93 || days < 1){ note.textContent = 'Rentang terlalu panjang untuk rekap harian. Pilih rentang maksimal 3 bulan (mis. "Bulan ini").'; body.innerHTML = ''; return; }
+  note.textContent = `Periode ${from} s/d ${to}. Hari berwarna kuning belum ada transaksi sama sekali. Klik baris untuk melihat transaksi hari itu.`;
+  const per = {}; all.forEach(t=>{ if(t.date < from || t.date > to) return; const d = per[t.date] = per[t.date] || { n:0, in:0, out:0 }; d.n++; if(t.payment_method !== 'pindah'){ if(t.amount > 0) d.in += t.amount; else d.out += -t.amount; } });
+  const rows = [];
+  for(let i = 0; i < days; i++){ const d = new Date(from + 'T00:00:00'); d.setDate(d.getDate() + i); const k = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); if(k > today) break; rows.push(k); }
+  body.innerHTML = rows.reverse().map(k=>{ const d = per[k];
+    return `<tr data-txday="${k}" style="cursor:pointer; ${d ? '' : 'background:rgba(255,193,7,.15);'}"><td>${k} <span class="helper" style="margin:0;">${txDayName(k)}</span></td><td class="right">${d ? d.n : 0}</td><td class="right income">${d ? formatCurrency(d.in) : '-'}</td><td class="right expense">${d ? formatCurrency(d.out) : '-'}</td><td>${d ? '' : '<span class="pill pill-amber">Belum ada transaksi</span>'}</td></tr>`; }).join('');
+}
 function renderTransactions(){
   const tbody = document.getElementById('transTable');
-  const fromDate = document.getElementById('transFilterFrom').value;
-  const toDate = document.getElementById('transFilterTo').value;
-
-  let filtered = [...data.transactions, ...(data.transfers||[])];
-  if(fromDate){ filtered = filtered.filter(t => t.date >= fromDate); }
-  if(toDate){ filtered = filtered.filter(t => t.date <= toDate); }
-  const sorted = filtered.sort((a,b)=> b.date.localeCompare(a.date));
+  const all = [...data.transactions, ...(data.transfers||[])];
+  txFillFilterOptions(all);
+  const f = txFilterState(), fromDate = f.from, toDate = f.to;
+  const flags = txComputeFlags(all);
+  // chip pemeriksaan: hitung pada rentang tanggal terpilih
+  const inRange = txApplyFilters(all, { from: f.from, to: f.to }, flags, '');
+  document.getElementById('transCheckChips').innerHTML = TRANS_CHECKS.map(([k, label])=>{
+    const n = inRange.filter(t=>flags.has(t.id) && flags.get(t.id).has(k)).length;
+    return `<button class="${transCheck === k ? 'primary' : 'ghost'}" data-check="${k}" style="padding:4px 12px; font-size:13px; ${n && transCheck !== k ? 'border-color:var(--amber, #d98c00);' : ''}">${label} (${n})</button>`;
+  }).join('');
+  const filtered = txApplyFilters(all, f, flags, transCheck);
+  const sorted = txSortRows(filtered, f.sort);
+  // ringkasan hasil filter
+  const real = filtered.filter(t=>t.payment_method !== 'pindah');
+  const sIn = real.filter(t=>t.amount > 0).reduce((a,t)=>a+t.amount,0), sOut = real.filter(t=>t.amount < 0).reduce((a,t)=>a-t.amount,0);
+  document.getElementById('transSummary').innerHTML = `<span>Hasil: <b>${filtered.length}</b> transaksi</span><span class="income">Masuk (+): <b>${formatCurrency(sIn)}</b> (${real.filter(t=>t.amount>0).length})</span><span class="expense">Keluar (−): <b>${formatCurrency(sOut)}</b> (${real.filter(t=>t.amount<0).length})</span><span>Selisih: <b>${formatCurrency(sIn - sOut)}</b></span>`;
+  txRenderDaily(all, f);
 
   const totalCount = sorted.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / TRANS_PAGE_SIZE));
@@ -1645,13 +1736,13 @@ function renderTransactions(){
   const startIdx = (transCurrentPage - 1) * TRANS_PAGE_SIZE;
   const pageRows = sorted.slice(startIdx, startIdx + TRANS_PAGE_SIZE);
 
-  const filterLabel = (fromDate || toDate) ? ` (terfilter dari ${data.transactions.length})` : '';
+  const filterLabel = totalCount !== all.length ? ` (terfilter dari ${all.length})` : '';
   document.getElementById('transCount').textContent = totalCount + ' transaksi' + filterLabel;
   document.getElementById('transPageInfo').textContent = totalCount === 0 ? '' : `Halaman ${transCurrentPage} dari ${totalPages} · menampilkan ${pageRows.length} dari ${totalCount}`;
   document.getElementById('transPrevBtn').disabled = transCurrentPage <= 1;
   document.getElementById('transNextBtn').disabled = transCurrentPage >= totalPages;
 
-  if(pageRows.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="empty">Tidak ada transaksi pada rentang tanggal ini</td></tr>'; return; }
+  if(pageRows.length === 0){ tbody.innerHTML = '<tr><td colspan="7" class="empty">Tidak ada transaksi yang cocok dengan filter ini</td></tr>'; return; }
   tbody.innerHTML = pageRows.map(t => {
     let metode = '-';
     if(t.payment_method === 'cash') metode = `<span class="pill pill-green">Cash${/^1-\d{4}$/.test(t.bank||'') ? ': '+escapeHtml(akAccName(data, t.bank)) : ''}</span>`;
@@ -1668,7 +1759,7 @@ function renderTransactions(){
     else if(t.proof_url){ metode += ` <a href="${t.proof_url}" target="_blank" rel="noopener" style="font-size:12px;">Lihat bukti (lama)</a>`; }
     return `
     <tr>
-      <td>${t.date}</td><td>${escapeHtml(t.description)}</td><td>${escapeHtml(t.category||'-')}</td>
+      <td>${t.date}</td><td>${escapeHtml(t.description)}${flags.has(t.id) ? ' ' + [...flags.get(t.id)].map(k=>`<span class="pill pill-amber" title="Perlu dicek">${TX_FLAG_LABEL[k]}</span>`).join(' ') : ''}</td><td>${escapeHtml(t.category||'-')}</td>
       <td class="right ${t.payment_method==='pindah'?'':(t.amount>=0?'income':'expense')}">${formatCurrency(t.payment_method==='pindah'?Math.abs(t.amount):t.amount)}</td>
       <td>${metode}</td>
       <td>${escapeHtml(t.created_by||'-')}</td>
@@ -1841,13 +1932,39 @@ function cancelEditTransaction(){
 }
 document.getElementById('cancelEditTransBtn').addEventListener('click', cancelEditTransaction);
 
-document.getElementById('transFilterFrom').addEventListener('change', ()=>{ transCurrentPage = 1; renderTransactions(); });
-document.getElementById('transFilterTo').addEventListener('change', ()=>{ transCurrentPage = 1; renderTransactions(); });
+['transFilterFrom','transFilterTo','transFilterType','transFilterMethod','transFilterCat','transFilterUser','transFilterSort'].forEach(id=>document.getElementById(id).addEventListener('change', ()=>{ transCurrentPage = 1; renderTransactions(); }));
+document.getElementById('transFilterSearch').addEventListener('input', ()=>{ transCurrentPage = 1; renderTransactions(); });
 document.getElementById('transFilterResetBtn').addEventListener('click', ()=>{
-  document.getElementById('transFilterFrom').value = '';
-  document.getElementById('transFilterTo').value = '';
-  transCurrentPage = 1;
-  renderTransactions();
+  ['transFilterFrom','transFilterTo','transFilterType','transFilterMethod','transFilterCat','transFilterUser','transFilterSearch'].forEach(id=>document.getElementById(id).value = '');
+  document.getElementById('transFilterSort').value = 'new'; transCheck = ''; transCurrentPage = 1; renderTransactions();
+});
+document.getElementById('transQuick').addEventListener('click', (e)=>{
+  const b = e.target.closest('button[data-q]'); if(!b) return;
+  const t = new Date(), ymd = (d)=>d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  let from = '', to = '';
+  if(b.dataset.q === 'today') from = to = ymd(t);
+  else if(b.dataset.q === 'yesterday'){ const y = new Date(t); y.setDate(y.getDate()-1); from = to = ymd(y); }
+  else if(b.dataset.q === '7d'){ const y = new Date(t); y.setDate(y.getDate()-6); from = ymd(y); to = ymd(t); }
+  else if(b.dataset.q === 'month'){ from = ymd(new Date(t.getFullYear(), t.getMonth(), 1)); to = ymd(t); }
+  else if(b.dataset.q === 'lastmonth'){ from = ymd(new Date(t.getFullYear(), t.getMonth()-1, 1)); to = ymd(new Date(t.getFullYear(), t.getMonth(), 0)); }
+  document.getElementById('transFilterFrom').value = from; document.getElementById('transFilterTo').value = to; transCurrentPage = 1; renderTransactions();
+});
+document.getElementById('transCheckChips').addEventListener('click', (e)=>{
+  const b = e.target.closest('button[data-check]'); if(!b) return;
+  transCheck = transCheck === b.dataset.check ? '' : b.dataset.check; transCurrentPage = 1; renderTransactions();
+});
+document.getElementById('transDailyBody').addEventListener('click', (e)=>{
+  const tr = e.target.closest('tr[data-txday]'); if(!tr) return;
+  document.getElementById('transFilterFrom').value = document.getElementById('transFilterTo').value = tr.dataset.txday; transCurrentPage = 1; renderTransactions();
+  document.getElementById('transTable').scrollIntoView({behavior:'smooth', block:'start'});
+});
+document.getElementById('transExportBtn').addEventListener('click', ()=>{
+  const all = [...data.transactions, ...(data.transfers||[])], flags = txComputeFlags(all);
+  const rows = txSortRows(txApplyFilters(all, txFilterState(), flags, transCheck), txFilterState().sort);
+  if(!rows.length){ alert('Tidak ada data untuk diunduh.'); return; }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map(t=>({ Tanggal:t.date, Deskripsi:t.description, Kategori:t.category||'', 'Jumlah (Rp)':t.payment_method==='pindah'?Math.abs(t.amount):t.amount, Metode:formatPaymentMethodText(t), 'Dicatat oleh':t.created_by||'', 'Perlu dicek': flags.has(t.id) ? [...flags.get(t.id)].map(k=>TX_FLAG_LABEL[k]).join(', ') : '' }))), 'Transaksi');
+  XLSX.writeFile(wb, `Transaksi-terfilter-${rcToday()}.xlsx`);
 });
 document.getElementById('transPrevBtn').addEventListener('click', ()=>{ transCurrentPage--; renderTransactions(); });
 document.getElementById('transNextBtn').addEventListener('click', ()=>{ transCurrentPage++; renderTransactions(); });
