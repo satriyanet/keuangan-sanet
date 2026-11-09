@@ -260,6 +260,7 @@
     <div class="subtabs" id="transaksiSubtabs">
       <button class="subtab active" data-subview="baru">Transaksi baru</button>
       <button class="subtab" data-subview="tabungan">Tabungan</button>
+      <button class="subtab" data-subview="pindahdana">Pindah dana</button>
     </div>
 
     <div class="subview active" id="subview-baru">
@@ -382,6 +383,27 @@
           <span class="helper" id="transPageInfo"></span>
           <button class="ghost" id="transNextBtn">Selanjutnya ›</button>
         </div>
+      </div>
+    </div>
+
+    <div class="subview" id="subview-pindahdana">
+      <div class="card" style="margin-top:16px;">
+        <h3>Pindah dana (satu pintu)</h3>
+        <p class="helper" style="margin-top:0;">Semua perpindahan uang internal ada di sini: <b>kas ↔ bank</b>, <b>antar bank/kas</b>, <b>kas/bank ↔ tabungan</b>, dan <b>antar tabungan</b>. Pilih <b>Dari</b> dan <b>Ke</b>, aplikasi menentukan pencatatannya sendiri. Penjelasan dampak muncul di bawah sebelum disimpan.</p>
+        <div class="form-grid">
+          <input type="date" id="pdDate">
+          <select id="pdFrom" aria-label="Dari"></select>
+          <select id="pdTo" aria-label="Ke"></select>
+          <input type="number" id="pdAmount" placeholder="Jumlah (Rp)">
+          <input type="text" id="pdNotes" placeholder="Catatan (opsional)">
+          <button class="primary" id="pdBtn">Pindahkan</button>
+        </div>
+        <div id="pdPreview" class="helper" style="margin-top:10px; padding:10px 12px; background:rgba(0,0,0,.04); border-radius:8px;"></div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <h3 style="margin-top:0;">Riwayat pindah dana terakhir</h3>
+        <div style="overflow-x:auto;"><table><thead><tr><th>Tanggal</th><th>Dari</th><th>Ke</th><th class="right">Jumlah</th><th>Catatan</th></tr></thead><tbody id="pdHistory"></tbody></table></div>
+        <p class="helper" style="margin-bottom:0;">Untuk membatalkan, hapus dari daftar transaksi (Pindah dana) atau Riwayat tabungan (Pindah tabungan) — Owner.</p>
       </div>
     </div>
 
@@ -1521,13 +1543,13 @@ function financialTotals(){
   // Tabungan perusahaan (pool utama) TIDAK termasuk dana pass-through (Service/PSB, Voucher) — itu pool terpisah
   const totalSavings = data.savings.filter(x => !isPassthroughSavingsType(x.jenis)).reduce((s,x)=>s+x.amount,0);
   // Saldo awal tabungan (uang yang sudah ada sebelum pencatatan) menambah saldo tabungan tetapi TIDAK mengurangi kas dan bukan pengeluaran
-  const totalSavingsCash = data.savings.filter(x => !isPassthroughSavingsType(x.jenis) && x.source !== 'opening_balance').reduce((s,x)=>s+x.amount,0);
+  const totalSavingsCash = data.savings.filter(x => !isPassthroughSavingsType(x.jenis) && x.source !== 'opening_balance' && x.source !== 'transfer').reduce((s,x)=>s+x.amount,0);
   const totalServiceFund = data.savings.filter(x => (x.jenis||'').toLowerCase()==='service/psb').reduce((s,x)=>s+x.amount,0);
   const totalVoucherFund = data.savings.filter(x => (x.jenis||'').toLowerCase()==='voucher').reduce((s,x)=>s+x.amount,0);
 
   // Setoran (bukan penarikan) tabungan gaji/profit dihitung sebagai pengeluaran saat disetor
   const totalSavingsAsExpense = data.savings
-    .filter(x => x.amount > 0 && x.source !== 'opening_balance' && SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase()))
+    .filter(x => x.amount > 0 && x.source !== 'opening_balance' && x.source !== 'transfer' && SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase()))
     .reduce((s,x)=>s+x.amount,0);
 
   // Pengeluaran yang didanai tabungan gaji/profit -> tidak dihitung lagi (sudah dihitung saat disetor)
@@ -1773,8 +1795,8 @@ function renderTransactions(){
 
 function renderLaporan(){
   const { totalIncome, totalExpenseTxNonTabungan, tabunganExpenseGajiProfit, tabunganExpenseOther, totalSavings, totalServiceFund, serviceIncome, totalVoucherFund, voucherIncome, balanceSheetIncome, balanceSheetExpense, totalSavingsAsExpense, netProfit, cashBalance } = financialTotals();
-  const gajiSavingsDeposit = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
-  const profitSavingsDeposit = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
+  const gajiSavingsDeposit = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && x.source!=='transfer' && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
+  const profitSavingsDeposit = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && x.source!=='transfer' && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
 
   const hutangDiterima = data.transactions.filter(t=>t.amount>=0 && t.payment_method==='hutang').reduce((s,t)=>s+t.amount,0);
   const piutangDiberikan = Math.abs(data.transactions.filter(t=>t.amount<0 && t.payment_method==='piutang').reduce((s,t)=>s+t.amount,0));
@@ -2455,6 +2477,8 @@ async function renderAuditLog(){
 document.getElementById('logFilterTable').addEventListener('change', renderAuditLog);
 document.getElementById('refreshLogBtn').addEventListener('click', renderAuditLog);
 
+const ST_BASE = ['Gaji','Profit','Operational','Bandwidth','Service/PSB','Voucher'];
+function svBalanceOf(jenis){ return data.savings.filter(x=>(x.jenis||'').toLowerCase()===(jenis||'').toLowerCase()).reduce((a,x)=>a+x.amount,0); }
 function renderSavings(){
   const types = ['Gaji','Profit','Operational','Bandwidth'];
   const breakdown = types.map(t => ({
@@ -2509,7 +2533,7 @@ function renderSavings(){
       tbody.innerHTML = filtered.map(x => {
         running += x.amount;
         const isWithdrawal = x.amount < 0;
-        const badge = isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'opening_balance' ? '<span class="pill pill-amber">Saldo awal</span>' : x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
+        const badge = x.source === 'transfer' ? '<span class="pill pill-purple">Pindah tabungan</span>' : isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'opening_balance' ? '<span class="pill pill-amber">Saldo awal</span>' : x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
         return `
         <tr>
           <td>${x.date}</td>
@@ -2531,7 +2555,7 @@ function renderSavings(){
     } else {
       tbody.innerHTML = sorted.map(x => {
         const isWithdrawal = x.amount < 0;
-        const badge = isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'opening_balance' ? '<span class="pill pill-amber">Saldo awal</span>' : x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
+        const badge = x.source === 'transfer' ? '<span class="pill pill-purple">Pindah tabungan</span>' : isWithdrawal ? '<span class="pill pill-red">Penarikan</span>' : (x.source === 'opening_balance' ? '<span class="pill pill-amber">Saldo awal</span>' : x.source === 'auto_distribution' ? '<span class="pill pill-purple">Auto</span>' : '<span class="pill pill-green">Setoran</span>');
         return `
         <tr>
           <td>${x.date}</td>
@@ -3217,7 +3241,7 @@ function renderAll(){
   run('Dashboard', renderDashboard); run('Transaksi', renderTransactions); run('Laporan', renderLaporan);
   run('Piutang', renderReceivables); run('Utang', renderPayables); run('Kasbon', renderKasbon); run('Rekomendasi', renderRekomendasiPelunasan);
   run('Anggaran', renderBudgets); run('Gaji', renderPayroll); run('Tabungan', renderSavings); run('Proyeksi', renderProjection);
-  run('Akuntansi', renderAkuntansi); run('Pengeluaran rutin', renderRutin); run('Karyawan', renderEmployees); run('Akun pindah dana', fillTransferAccounts); run('Akun transaksi', fillTxAccountOptions); run('Saldo akun', renderDashAccounts); run('Form pembayaran', fillLinkedRecordOptions); run('Dashboard periode', renderDashPeriods);
+  run('Akuntansi', renderAkuntansi); run('Pengeluaran rutin', renderRutin); run('Karyawan', renderEmployees); run('Akun pindah dana', fillTransferAccounts); run('Pindah dana satu pintu', fillPindahDana); run('Akun transaksi', fillTxAccountOptions); run('Saldo akun', renderDashAccounts); run('Form pembayaran', fillLinkedRecordOptions); run('Dashboard periode', renderDashPeriods);
   if(currentRole === 'owner'){
     if(bsRange) run('Hapus data', bsRender);
     run('Perbandingan', renderComparison); run('Pengguna', renderUsers);
@@ -3266,8 +3290,8 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.payroll.map(p => ({ Bulan:payrollMonthLabel(p.month), Karyawan:p.employee_name, 'Gaji pokok (Rp)':p.base_salary, 'Bonus pulsa (Rp)':payParts(p).pulsa, 'Bonus service (Rp)':payParts(p).service, 'Bonus head (Rp)':payParts(p).head, 'Bonus lainnya (Rp)':payParts(p).lain, 'BPJS (Rp)':p.bpjs||0, 'BPJS ditanggung':p.bpjs ? (p.bpjs_mode==='potong'?'Karyawan':'Perusahaan') : '', 'Potongan kasbon (Rp)':p.potong_kasbon||0, 'Potongan BPJS (Rp)':p.bpjs_potong||0, 'Potongan pinjaman (Rp)':p.potong_pinjaman||0, 'Sisa pinjaman (Rp)':p.sisa_pinjaman||0, 'Diterima (Rp)':payNet(p), 'Biaya perusahaan (Rp)':payCost(p), Catatan:p.notes||'' }))), 'Gaji & Bonus');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data.savings.map(x => ({ Tanggal:x.date, Jenis:x.jenis, 'Jumlah (Rp)':x.amount, 'Dihitung sebagai pengeluaran':SAVINGS_AS_EXPENSE_TYPES.includes((x.jenis||'').toLowerCase())?'Ya':'Tidak', Catatan:x.notes||'' }))), 'Tabungan');
   const agg = monthlyAggregates();
-  const gajiSavingsXls = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
-  const profitSavingsXls = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
+  const gajiSavingsXls = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && x.source!=='transfer' && (x.jenis||'').toLowerCase()==='gaji').reduce((s,x)=>s+x.amount,0);
+  const profitSavingsXls = data.savings.filter(x=>x.amount>0 && x.source!=='opening_balance' && x.source!=='transfer' && (x.jenis||'').toLowerCase()==='profit').reduce((s,x)=>s+x.amount,0);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
     { Keterangan: 'Pendapatan penjualan', 'Jumlah (Rp)': totalIncome },
     { Keterangan: 'Biaya operasional (cash/transfer)', 'Jumlah (Rp)': -financialTotals().totalExpenseTxNonTabungan },
@@ -3886,6 +3910,89 @@ document.getElementById('addSavingsBtn').addEventListener('click', async ()=>{
   logActivity('create', 'savings', `${isOpening ? 'Saldo awal tabungan' : 'Setoran tabungan'} ${jenis} ${formatCurrency(amount)}`);
 });
 
+// ===== Pindah dana satu pintu =====
+const PD_NO_CASH_SAVINGS = ['service/psb','voucher'];
+function svBalanceOf(jenis){ return data.savings.filter(x=>(x.jenis||'').toLowerCase()===(jenis||'').toLowerCase()).reduce((a,x)=>a+x.amount,0); }
+function pdSavingNames(){
+  const names = ['Gaji','Profit','Operational','Bandwidth','Service/PSB','Voucher'];
+  data.savings.forEach(x=>{ if(x.jenis && !names.some(n=>n.toLowerCase()===x.jenis.toLowerCase())) names.push(x.jenis); });
+  return names;
+}
+function pdLabel(v){ return v.startsWith('A:') ? trAcctName(v.slice(2)) : 'Tabungan ' + v.slice(2); }
+function fillPindahDana(){
+  const from = document.getElementById('pdFrom'), to = document.getElementById('pdTo'); if(!from || !to) return;
+  const accts = akCoa(data).filter(a=>(a.is_active !== false) && /^1-1[12]\d\d$/.test(a.code)).sort((a,b)=>a.code.localeCompare(b.code));
+  const grp = (lbl, items)=>`<optgroup label="${lbl}">${items}</optgroup>`;
+  const opts = grp('Kas & Bank', accts.map(a=>`<option value="A:${a.code}">${escapeHtml(a.name)} (${a.code})</option>`).join('')) +
+    grp('Tabungan', pdSavingNames().map(n=>`<option value="S:${escapeHtml(n)}">Tabungan ${escapeHtml(n)} (saldo ${formatCurrency(svBalanceOf(n))})</option>`).join(''));
+  const pf = from.value, pt = to.value;
+  from.innerHTML = '<option value="">Dari...</option>' + opts; to.innerHTML = '<option value="">Ke...</option>' + opts;
+  if(pf && [...from.options].some(o=>o.value===pf)) from.value = pf; if(pt && [...to.options].some(o=>o.value===pt)) to.value = pt;
+  const d = document.getElementById('pdDate'); if(d && !d.value) d.value = rcToday();
+  pdRenderPreview();
+  const hist = [
+    ...(data.transfers||[]).map(t=>({ date:t.date, id:t.id, from:trAcctName(t.loan_party), to:trAcctName(t.bank), amt:Math.abs(t.amount), note:t.description||'' })),
+    ...data.savings.filter(x=>x.source==='transfer' && x.amount>0).map(x=>{ const m = (x.notes||'').match(/^Pindah dari ([^-]+?)(?: - (.*))?$/); return { date:x.date, id:x.id, from:'Tabungan ' + (m ? m[1].trim() : '?'), to:'Tabungan ' + x.jenis, amt:x.amount, note:(m && m[2]) || '' }; })
+  ].sort((a,b)=>b.date.localeCompare(a.date) || b.id-a.id).slice(0,15);
+  document.getElementById('pdHistory').innerHTML = hist.length ? hist.map(h=>`<tr><td>${h.date}</td><td>${escapeHtml(h.from)}</td><td>${escapeHtml(h.to)}</td><td class="right">${formatCurrency(h.amt)}</td><td>${escapeHtml(h.note)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">Belum ada pindah dana</td></tr>';
+}
+function pdPlan(from, to, amount){
+  // kembalikan {error} atau {steps:[teks], effect:teks}
+  if(!from || !to) return { hint:'Pilih asal dan tujuan dana.' };
+  if(from === to) return { error:'Asal dan tujuan tidak boleh sama.' };
+  const fa = from.startsWith('A:'), ta = to.startsWith('A:'), fn = from.slice(2), tn = to.slice(2);
+  if(fa && ta) return { kind:'AA', effect:'Uang hanya berpindah tempat. Total kas, pendapatan, pengeluaran, dan laba <b>tidak berubah</b>.' };
+  if(!fa && !ta){
+    if(amount > svBalanceOf(fn)) return { error:`Saldo tabungan ${fn} hanya ${formatCurrency(svBalanceOf(fn))}.` };
+    return { kind:'SS', effect:'Hanya saldo kedua tabungan yang bergeser. Kas, pengeluaran, dan laba <b>tidak berubah</b>.' };
+  }
+  const sv = fa ? tn : fn;
+  if(PD_NO_CASH_SAVINGS.includes(sv.toLowerCase())) return { error:`Dana ${sv} adalah dana titipan di luar kas, jadi tidak bisa dipindah langsung dari/ke kas atau bank. Pindahkan dulu ke tabungan lain (mis. Bandwidth), atau catat lewat transaksi ${sv}.` };
+  const acct = fa ? fn : tn, viaKas = acct !== '1-1100';
+  const asExp = ['gaji','profit'].includes(sv.toLowerCase());
+  if(fa){
+    return { kind:'AS', effect:`${viaKas ? 'Dicatat 2 langkah: ' + trAcctName(fn) + ' → Kas, lalu Kas → Tabungan ' + sv + '. ' : ''}Kas <b>berkurang</b> ${formatCurrency(amount||0)} dan saldo tabungan ${sv} bertambah.${asExp ? ' Karena jenis <b>' + sv + '</b>, setoran ini juga dihitung sebagai <b>pengeluaran</b> (sesuai aturan tabungan gaji/profit).' : ''}` };
+  }
+  if(amount > svBalanceOf(fn)) return { error:`Saldo tabungan ${fn} hanya ${formatCurrency(svBalanceOf(fn))}.` };
+  return { kind:'SA', effect:`${viaKas ? 'Dicatat 2 langkah: Tabungan ' + sv + ' → Kas, lalu Kas → ' + trAcctName(tn) + '. ' : ''}Saldo tabungan ${sv} <b>berkurang</b> dan kas <b>bertambah</b> ${formatCurrency(amount||0)}. Penarikan bukan pendapatan.` };
+}
+function pdRenderPreview(){
+  const el = document.getElementById('pdPreview'); if(!el) return;
+  const plan = pdPlan(document.getElementById('pdFrom').value, document.getElementById('pdTo').value, parseFloat(document.getElementById('pdAmount').value) || 0);
+  el.innerHTML = plan.error ? `<span style="color:var(--red);">${plan.error}</span>` : plan.hint ? plan.hint : plan.effect;
+}
+['pdFrom','pdTo'].forEach(id=>document.getElementById(id).addEventListener('change', pdRenderPreview));
+document.getElementById('pdAmount').addEventListener('input', pdRenderPreview);
+document.getElementById('pdBtn').addEventListener('click', async ()=>{
+  const date = document.getElementById('pdDate').value, from = document.getElementById('pdFrom').value, to = document.getElementById('pdTo').value;
+  const amount = parseFloat(document.getElementById('pdAmount').value), note = document.getElementById('pdNotes').value.trim();
+  if(!date || !from || !to || isNaN(amount) || amount <= 0){ alert('Lengkapi tanggal, asal, tujuan, dan jumlah yang valid.'); return; }
+  const plan = pdPlan(from, to, amount); if(plan.error){ alert(plan.error); return; }
+  const fn = from.slice(2), tn = to.slice(2), by = currentUsername, tail = note ? ' - ' + note : '';
+  const txMove = (a, b, extra)=>sb.from('transactions').insert({ date, description: `Pindah dana ${trAcctName(a)} → ${trAcctName(b)}${extra||''}${tail}`, amount, category: 'Pindah Dana', created_by: by, payment_method: 'pindah', bank: b, loan_party: a, proof_path: null, saving_type: null });
+  const btn = document.getElementById('pdBtn'); btn.disabled = true;
+  let step = 0, error = null;
+  try{
+    if(plan.kind === 'AA'){ ({ error } = await txMove(fn, tn)); }
+    else if(plan.kind === 'SS'){
+      ({ error } = await sb.from('savings').insert([
+        { date, jenis: fn, amount: -amount, notes: 'Pindah ke ' + tn + tail, source: 'transfer', created_by: by },
+        { date, jenis: tn, amount: amount, notes: 'Pindah dari ' + fn + tail, source: 'transfer', created_by: by }]));
+    } else if(plan.kind === 'AS'){
+      if(fn !== '1-1100'){ ({ error } = await txMove(fn, '1-1100', ' (langkah 1)')); if(error) throw error; step = 1; }
+      ({ error } = await sb.from('savings').insert({ date, jenis: tn, amount, notes: 'Pindah dari ' + trAcctName(fn) + tail, created_by: by }));
+    } else if(plan.kind === 'SA'){
+      ({ error } = await sb.from('savings').insert({ date, jenis: fn, amount: -amount, notes: 'Pindah ke ' + trAcctName(tn) + tail, created_by: by })); if(error) throw error; step = 1;
+      if(tn !== '1-1100'){ ({ error } = await txMove('1-1100', tn, ' (langkah 2)')); }
+    }
+  }catch(e){ error = e; }
+  btn.disabled = false;
+  if(error){ alert('Gagal menyimpan' + (step ? ' pada langkah ke-' + (step+1) + ' (langkah sebelumnya sudah tersimpan, cek Riwayat)' : '') + ': ' + (error.message || error)); await loadAllData(); renderAll(); return; }
+  document.getElementById('pdAmount').value = ''; document.getElementById('pdNotes').value = '';
+  flashSaved(); await loadAllData(); renderAll();
+  logActivity('create', 'transactions', `Pindah dana ${pdLabel(from)} → ${pdLabel(to)} ${formatCurrency(amount)}`);
+});
+
 document.getElementById('projMonths').addEventListener('input', renderProjection);
 
 let assetEditingId = null;
@@ -4062,7 +4169,12 @@ document.body.addEventListener('click', async (e)=>{
   } else if(action === 'delSavings'){
     const id = parseInt(btn.dataset.id,10);
     const rec = data.savings.find(x=>x.id===id);
-    const { error } = await sb.from('savings').delete().eq('id', id);
+    let ids = [id];
+    if(rec && rec.source === 'transfer'){
+      const pair = data.savings.filter(x=>x.source==='transfer' && x.id!==id && x.date===rec.date && x.amount===-rec.amount).sort((a,b)=>Math.abs(a.id-id)-Math.abs(b.id-id))[0];
+      if(pair){ if(!confirm('Ini bagian dari pemindahan antar tabungan. Kedua sisi (keluar & masuk) akan dihapus bersama. Lanjutkan?')) return; ids.push(pair.id); }
+    }
+    const { error } = await sb.from('savings').delete().in('id', ids);
     if(!error){ await loadAllData(); renderSavings(); renderDashboard(); renderLaporan(); logActivity('delete', 'savings', rec ? `${rec.jenis} ${formatCurrency(rec.amount)}` : `id ${id}`); }
   } else if(action === 'delUser'){
     const username = btn.dataset.username;
@@ -4193,6 +4305,12 @@ function akBuildAutoJournal(d){
     const amt = Math.abs(s.amount); if(!(amt > 0)) return;
     const j = (s.jenis||'').toLowerCase();
     const ref = 'TB-'+s.id, o = {type:'saving', id:s.id};
+    if(s.source === 'transfer' && !isPassthroughSavingsType(j)){
+      // Pindah antar tabungan: tidak menyentuh kas/laba. Dua sisi (keluar & masuk) saling meniadakan lewat akun penyeimbang 3-2000.
+      const tabT = akSavingAccount(j);
+      add(ref, s.date, ref, (s.amount>0 ? 'Pindah tabungan masuk ' : 'Pindah tabungan keluar ')+s.jenis+(s.notes?' - '+s.notes:''), s.amount>0 ? [[tabT,amt,0],['3-2000',0,amt]] : [['3-2000',amt,0],[tabT,0,amt]], o);
+      return;
+    }
     if(isPassthroughSavingsType(j)){
       const fund = j==='service/psb' ? '1-1510' : '1-1520', liab = j==='service/psb' ? '2-1510' : '2-1520';
       add(ref, s.date, ref, (s.notes || ('Dana '+s.jenis)), s.amount>0 ? [[fund,amt,0],[liab,0,amt]] : [[liab,amt,0],[fund,0,amt]], o);
