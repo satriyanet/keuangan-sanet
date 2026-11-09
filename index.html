@@ -5095,7 +5095,17 @@ document.addEventListener('input', (e)=>{
 // ---------- PWA service worker ----------
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg)=>{
+      const check = ()=>{ try{ reg.update(); }catch(e){} };
+      document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'visible') check(); });
+      setInterval(check, 30 * 60 * 1000);
+    }).catch(()=>{});
+    // Versi baru aktif -> muat ulang sekali agar langsung memakai tampilan terbaru
+    let hadController = !!navigator.serviceWorker.controller, reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(!hadController){ hadController = true; return; }
+      if(reloaded) return; reloaded = true; location.reload();
+    });
   });
 }
 </script>
